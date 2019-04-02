@@ -10,11 +10,9 @@ import (
 
 //go:generate go run github.com/fpawel/elco/cmd/utils/sqlstr/...
 
-
-
-
-func LastParty() (party Party) {
-	err := DBProducts.Get(&party, `SELECT * FROM last_party`)
+func LastParty() (party *Party) {
+	party = new(Party)
+	err := DBProducts.Get(party, `SELECT * FROM last_party`)
 	if err == nil {
 		return
 	}
@@ -28,18 +26,24 @@ func LastParty() (party Party) {
 	return
 }
 
-func SaveParty(party Party) error {
-	_, err := DBProducts.NamedExec(
-		`UPDATE party SET type = :type, pgs1 = :pgs1, pgs2 = :pgs2, pgs3 = :pgs3, pgs4 = :pgs4 WHERE party_id = :party_id`,
-		map[string]interface{}{
-			"party_id": party.PartyID,
-			"pgs1":     party.Pgs1,
-			"pgs2":     party.Pgs2,
-			"pgs3":     party.Pgs3,
-			"pgs4":     party.Pgs4,
-			"type":     party.Type,
-		})
-	return err
+func GetProductsByPartyID(partyID int64) (products []*Product) {
+	if err := DBProducts.Select(&products, `SELECT * FROM product WHERE party_id = ?`, partyID); err != nil {
+		panic(err)
+	}
+	return
+}
+
+func GetProductsOfLastParty() (products []*Product) {
+	if err := DBProducts.Select(&products, `SELECT * FROM product WHERE party_id = (SELECT party_id FROM last_party)`); err != nil {
+		panic(err)
+	}
+	return
+}
+
+func GetProductByID(productID int64) (product *Product, err error) {
+	product = new(Product)
+	err = DBProducts.Get(product, `SELECT * FROM product WHERE product_id = ?`, productID)
+	return
 }
 
 func CreateNewParty() int64 {

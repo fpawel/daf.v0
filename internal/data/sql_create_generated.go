@@ -41,4 +41,10 @@ CREATE TABLE IF NOT EXISTS product_value
     threshold2    BOOLEAN NOT NULL,
     UNIQUE (product_id, gas, tex),
     FOREIGN KEY (product_id) REFERENCES product (product_id) ON DELETE CASCADE
-);`
+);
+
+CREATE VIEW IF NOT EXISTS last_party AS
+SELECT *
+FROM party
+ORDER BY created_at DESC
+LIMIT 1;`
