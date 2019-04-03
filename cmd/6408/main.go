@@ -4,9 +4,10 @@ import (
 	"github.com/fpawel/daf/internal/assets"
 )
 
-func main(){
+func main() {
+
 	assets.EnsureManifestFile()
-	if err := runMainWindow(); err!=nil {
+	if err := runMainWindow(); err != nil {
 		panic(err)
 	}
 }

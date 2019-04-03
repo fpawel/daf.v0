@@ -34,7 +34,16 @@ func GetProductsByPartyID(partyID int64) (products []*Product) {
 }
 
 func GetProductsOfLastParty() (products []*Product) {
-	if err := DBProducts.Select(&products, `SELECT * FROM product WHERE party_id = (SELECT party_id FROM last_party)`); err != nil {
+	if err := DBProducts.Select(&products,
+		`SELECT * FROM product WHERE party_id = (SELECT party_id FROM last_party) ORDER BY created_at`); err != nil {
+		panic(err)
+	}
+	return
+}
+
+func LastPartyHasCheckedProduct() (result bool) {
+	if err := DBProducts.Get(&result,
+		`SELECT exists( SELECT * FROM product WHERE party_id = (SELECT party_id FROM last_party) AND checked )`); err != nil {
 		panic(err)
 	}
 	return

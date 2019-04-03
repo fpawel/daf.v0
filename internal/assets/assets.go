@@ -12,8 +12,8 @@ import (
 
 func EnsureManifestFile() {
 
-	fileName := filepath.Base(os.Args[0]) + ".manifest"
-	fileName = filepath.Join(filepath.Dir(os.Args[0]), fileName)
+	fileName := filepath.Base(os.Args[0])
+	fileName = filepath.Join(filepath.Dir(os.Args[0]), fileName+".exe.manifest")
 	if _, err := os.Stat(fileName); !os.IsNotExist(err) {
 		return
 	}
@@ -36,9 +36,11 @@ func EnsureManifestFile() {
 }
 
 var (
-	ImgPinOn   = Image("assets/png16/pin_on.png")
-	ImgPinOff  = Image("assets/png16/pin_off.png")
-	ImgForward = Image("assets/png16/forward.png")
+	ImgPinOn     = Image("assets/png16/pin_on.png")
+	ImgPinOff    = Image("assets/png16/pin_off.png")
+	ImgForward   = Image("assets/png16/forward.png")
+	ImgError     = Image("assets/png16/error.png")
+	ImgCheckMark = Image("assets/png16/checkmark.png")
 )
 
 func Image(path string) walk.Image {

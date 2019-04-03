@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"github.com/fpawel/daf/internal/data"
 	"github.com/fpawel/elco/pkg/serial-comm/comport"
+	"github.com/fpawel/elco/pkg/serial-comm/modbus"
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 	"log"
@@ -58,12 +60,15 @@ func runMainWindow() error {
 	}
 
 	var (
-		mainWindow *walk.MainWindow
-		comboBoxProductType,
-		comboBoxComportProducts,
-		comboBoxComportHart *walk.ComboBox
-		numberEditPgs     [4]*walk.NumberEdit
-		productsTableView *walk.TableView
+		cbType,
+		cbComportDaf,
+		cbComportHart *walk.ComboBox
+		nePgs      [4]*walk.NumberEdit
+		tvProducts *walk.TableView
+
+		pnWork       *walk.Composite
+		neCmd, neArg *walk.NumberEdit
+		pbCancelWork *walk.PushButton
 	)
 
 	var currentParty = data.LastParty()
@@ -79,15 +84,40 @@ func runMainWindow() error {
 		}
 	}
 
-	productsModel := &productsModel{}
-	productsModel.validate()
+	var workStarted bool
+	doWork := func(what string, work func() error) {
+		if workStarted {
+			panic("already started")
+		}
+		workStarted = true
+		comportContext, cancelComport = context.WithCancel(context.Background())
+		pnWork.SetVisible(false)
+		portDaf.PortName = cbComportDaf.Text()
+		portHart.PortName = cbComportHart.Text()
+		pbCancelWork.SetVisible(true)
+		go func() {
+			err := work()
+			_ = portHart.Port.Close()
+			_ = portDaf.Port.Close()
+			mainWindow.Synchronize(func() {
+				workStarted = false
+				pnWork.SetVisible(true)
+				pbCancelWork.SetVisible(false)
+				lastPartyProductsModel.setInterrogatePlace(-1)
+				if err != nil {
+					showErr(what, err.Error())
+				}
+
+			})
+		}()
+	}
 
 	executeProductDialog := func() {
-		n := productsTableView.CurrentIndex()
-		if n < 0 || n >= len(productsModel.items) {
+		n := tvProducts.CurrentIndex()
+		if n < 0 || n >= len(lastPartyProductsModel.items) {
 			return
 		}
-		p := *productsModel.items[n].Product
+		p := *lastPartyProductsModel.items[n].Product
 		cmd, err := runProductDialog(mainWindow, &p)
 		if err != nil {
 			showErr("Ошибка данных", err.Error())
@@ -100,18 +130,18 @@ func runMainWindow() error {
 			showErr("Ошибка данных", err.Error())
 			return
 		}
-		productsModel.items[n].Product = &p
-		productsModel.PublishRowChanged(n)
+		lastPartyProductsModel.items[n].Product = &p
+		lastPartyProductsModel.PublishRowChanged(n)
 	}
 
 	newNumberEditPgs := func(n data.Gas) NumberEdit {
 		return NumberEdit{
 			Value:    currentParty.Pgs(n),
-			AssignTo: &numberEditPgs[n-1],
+			AssignTo: &nePgs[n-1],
 			MinValue: 0,
 			Decimals: 2,
 			OnValueChanged: func() {
-				currentParty.SetPgs(n, numberEditPgs[n-1].Value())
+				currentParty.SetPgs(n, nePgs[n-1].Value())
 				saveParty()
 			},
 		}
@@ -132,15 +162,45 @@ func runMainWindow() error {
 				VerticalFixed: true,
 				Layout:        HBox{},
 				Children: []Widget{
-					SplitButton{
-						Text: "Управление",
-						MenuItems: []MenuItem{
-							Action{
-								Text: "Опрос",
+					PushButton{
+						AssignTo: &pbCancelWork,
+						Text:     "Прервать",
+						OnClicked: func() {
+							cancelComport()
+						},
+					},
+
+					Composite{
+						AssignTo: &pnWork,
+						Layout: HBox{
+							MarginsZero: true,
+						},
+						Children: []Widget{
+							SplitButton{
+								Text: "Управление",
+								MenuItems: []MenuItem{
+									Action{
+										Text: "Опрос",
+										OnTriggered: func() {
+											doWork("опрос", interrogateProducts)
+										},
+									},
+									Action{
+										Text: "Настройка ДАФ-М",
+									},
+								},
 							},
-							Action{
-								Text: "Настройка ДАФ-М",
-							},
+							Label{Text: "Код:"},
+							NumberEdit{AssignTo: &neCmd},
+							Label{Text: "Аргумент:"},
+							NumberEdit{AssignTo: &neArg, Decimals: 2, MinSize: Size{80, 0}},
+							PushButton{Text: "Выполнить", OnClicked: func() {
+								cmd := modbus.DevCmd(neCmd.Value())
+								arg := neArg.Value()
+								doWork(fmt.Sprintf("Оправка команды %d,%v", cmd, arg), func() error {
+									return sendCmd(cmd, arg)
+								})
+							}},
 						},
 					},
 				},
@@ -149,10 +209,12 @@ func runMainWindow() error {
 				Layout: HBox{MarginsZero: true, SpacingZero: true},
 				Children: []Widget{
 					TableView{
-						AssignTo:                 &productsTableView,
+						AssignTo:                 &tvProducts,
 						NotSortableByHeaderClick: true,
+						LastColumnStretched:      true,
 						CheckBoxes:               true,
-						Model:                    productsModel,
+						Model:                    lastPartyProductsModel,
+
 						Columns: []TableViewColumn{
 							{Title: "Адрес", Width: 80},
 							{Title: "Номер", Width: 100},
@@ -160,6 +222,7 @@ func runMainWindow() error {
 							{Title: "Ток", Width: 100},
 							{Title: "Порог 1", Width: 120},
 							{Title: "Порог 2", Width: 120},
+							{Title: "Связь"},
 						},
 						ContextMenuItems: []MenuItem{
 							Action{
@@ -170,13 +233,15 @@ func runMainWindow() error {
 								Shortcut: Shortcut{
 									Key: walk.KeyInsert,
 								},
-								OnTriggered: productsModel.addNewProduct,
+								OnTriggered: func() {
+									lastPartyProductsModel.addNewProduct()
+								},
 							},
 							Action{
-								Text: "Удалить прибор в из партии",
+								Text: "Удалить прибор из партии",
 							},
 							Action{
-								Text:        "Изменить адрес и/или серийный номер прибора",
+								Text:        "Изменить адрес, номер прибора",
 								OnTriggered: executeProductDialog,
 							},
 						},
@@ -190,19 +255,19 @@ func runMainWindow() error {
 								Layout: VBox{},
 								Children: []Widget{
 									Label{Text: "Стенд и приборы:"},
-									newComboBoxComport(&comboBoxComportProducts, "comport_products"),
+									newComboBoxComport(&cbComportDaf, "comport_products"),
 									Label{Text: "HART модем:"},
-									newComboBoxComport(&comboBoxComportHart, "comport_hart"),
+									newComboBoxComport(&cbComportHart, "comport_hart"),
 								},
 							},
 							Label{Text: "Исполнение:"},
 							ComboBox{
 								Model:         productTypes,
-								AssignTo:      &comboBoxProductType,
+								AssignTo:      &cbType,
 								DisplayMember: "Name",
 								CurrentIndex:  indexOfProductTypeCode(currentParty.Type),
 								OnCurrentIndexChanged: func() {
-									currentParty.Type = productTypes[comboBoxProductType.CurrentIndex()].Code
+									currentParty.Type = productTypes[cbType.CurrentIndex()].Code
 									saveParty()
 
 								},
@@ -223,7 +288,10 @@ func runMainWindow() error {
 	}).Create(); err != nil {
 		return err
 	}
+
+	pbCancelWork.SetVisible(false)
 	mainWindow.Run()
+
 	if err := settings.Save(); err != nil {
 		return err
 	}
@@ -257,7 +325,7 @@ func runProductDialog(owner walk.Form, p *data.Product) (int, error) {
 						MaxValue: 127,
 						Decimals: 0,
 						OnValueChanged: func() {
-							p.Addr = int(edAddr.Value())
+							p.Addr = modbus.Addr(edAddr.Value())
 						},
 					},
 					Label{Text: "Серийный номер:"},
@@ -279,7 +347,6 @@ func runProductDialog(owner walk.Form, p *data.Product) (int, error) {
 								Text:     "Ок",
 								AssignTo: &acceptPB,
 								OnClicked: func() {
-									fmt.Println(dlg.Size())
 									dlg.Accept()
 								},
 							},
@@ -287,7 +354,6 @@ func runProductDialog(owner walk.Form, p *data.Product) (int, error) {
 								Text:     "Отмена",
 								AssignTo: &cancelPB,
 								OnClicked: func() {
-									fmt.Println(dlg.Size())
 									dlg.Cancel()
 								},
 							},
@@ -318,3 +384,5 @@ func indexOfProductTypeCode(productTypeCode int) int {
 	}
 	return -1
 }
+
+var mainWindow *walk.MainWindow
