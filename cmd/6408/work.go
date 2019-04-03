@@ -10,13 +10,14 @@ import (
 	"github.com/fpawel/elco/pkg/serial-comm/comport"
 	"github.com/fpawel/elco/pkg/serial-comm/modbus"
 	"github.com/fpawel/serial"
+	"github.com/sirupsen/logrus"
 	"time"
 )
 
 func interrogateProducts() error {
 	for {
 		if !data.LastPartyHasCheckedProduct() {
-			return errors.New("не выбрано ни одной стоки в таблице")
+			return errors.New("не выбрано ни одной строки в таблице приборов текущей партии")
 		}
 		for place, p := range data.GetProductsOfLastParty() {
 			if !p.Checked {
@@ -44,10 +45,10 @@ func readProduct(place int, addr modbus.Addr) (ProductValue, error) {
 	}
 
 	if err == nil {
-		infof("№%d адр.%d: конц=%v ток=%v П1=%v П2=%v\n", place+1, addr,
+		logrus.Infof("№%d-ADDR%d: конц=%v ток=%v П1=%v П2=%v", place+1, addr,
 			v.Concentration, v.Current, v.Threshold1, v.Threshold2)
 	} else {
-		errorf("№%d адр.%d: %v\n", place+1, addr, err)
+		logrus.Errorf("№%d-ADDR%d: %v", place+1, addr, err)
 	}
 
 	return v, err
@@ -93,10 +94,11 @@ func sendCmd(cmd modbus.DevCmd, arg float64) error {
 
 		err := modbus.Write32FloatProto(portDaf, p.Addr, 0x10, cmd, arg)
 
+		what := fmt.Sprintf("№%d-ADDR%d-SER%d-ID%d: команда %d, %v", place+1, p.Addr, p.Serial, p.ProductID, cmd, arg)
 		if err == nil {
-			infof("№%d-%d адр.%d: команда %d, %v\n", place+1, p.ProductID, p.Addr, cmd, arg)
+			logrus.Info(what)
 		} else {
-			errorf("№%d-%d адр.%d: команда %d, %v: %v\n", place+1, p.ProductID, p.Addr, cmd, arg, err)
+			logrus.Errorf("%s: %v", what, err)
 		}
 
 		if err == nil {
@@ -136,12 +138,17 @@ func (x port) GetResponse(request []byte, prs comm.ResponseParser) ([]byte, erro
 }
 
 func onComport(entry comport.Entry) {
-	infoln(entry)
+	if entry.Error == nil {
+		logrus.Debugln(entry)
+	} else {
+		logrus.Errorln(entry)
+	}
+
 }
 
 var (
 	portDaf = port{
-		Port: comport.NewPort("ДАФ-М+стенд", serial.Config{Baud: 9600}, onComport),
+		Port: comport.NewPort("стенд", serial.Config{Baud: 9600}, onComport),
 		Config: comm.Config{
 			ReadByteTimeoutMillis: 30,
 			ReadTimeoutMillis:     1000,

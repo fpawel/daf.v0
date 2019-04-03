@@ -13,7 +13,7 @@ import (
 func EnsureManifestFile() {
 
 	fileName := filepath.Base(os.Args[0])
-	fileName = filepath.Join(filepath.Dir(os.Args[0]), fileName+".exe.manifest")
+	fileName = filepath.Join(filepath.Dir(os.Args[0]), fileName+".manifest")
 	if _, err := os.Stat(fileName); !os.IsNotExist(err) {
 		return
 	}

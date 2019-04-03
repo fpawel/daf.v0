@@ -115,7 +115,7 @@ func (m *productsModel) Value(row, col int) interface{} {
 func (m *productsModel) StyleCell(style *walk.CellStyle) {
 
 	if style.Row() == m.interrogatePlace {
-		style.BackgroundColor = walk.RGB(255, 255, 225)
+		style.BackgroundColor = walk.RGB(166, 202, 240)
 	}
 
 	p := m.items[style.Row()]

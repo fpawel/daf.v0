@@ -9,6 +9,7 @@ import (
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 	"log"
+	"time"
 )
 
 func getComports() []string {
@@ -66,9 +67,12 @@ func runMainWindow() error {
 		nePgs      [4]*walk.NumberEdit
 		tvProducts *walk.TableView
 
-		pnWork       *walk.Composite
-		neCmd, neArg *walk.NumberEdit
-		pbCancelWork *walk.PushButton
+		neCmd, neArg         *walk.NumberEdit
+		pbCancelWork         *walk.PushButton
+		lblWork, lblWorkTime *walk.Label
+
+		sbRun *walk.SplitButton
+		gbCmd *walk.GroupBox
 	)
 
 	var currentParty = data.LastParty()
@@ -91,21 +95,36 @@ func runMainWindow() error {
 		}
 		workStarted = true
 		comportContext, cancelComport = context.WithCancel(context.Background())
-		pnWork.SetVisible(false)
+
+		sbRun.SetVisible(false)
+		gbCmd.SetVisible(false)
+
 		portDaf.PortName = cbComportDaf.Text()
 		portHart.PortName = cbComportHart.Text()
 		pbCancelWork.SetVisible(true)
+		_ = lblWorkTime.SetText(time.Now().Format("15:04:05"))
+		_ = lblWork.SetText(fmt.Sprintf("%s: выполняется", what))
+		lblWork.SetTextColor(walk.RGB(128, 0, 0))
 		go func() {
 			err := work()
 			_ = portHart.Port.Close()
 			_ = portDaf.Port.Close()
 			mainWindow.Synchronize(func() {
 				workStarted = false
-				pnWork.SetVisible(true)
+
+				sbRun.SetVisible(true)
+				gbCmd.SetVisible(true)
+
 				pbCancelWork.SetVisible(false)
 				lastPartyProductsModel.setInterrogatePlace(-1)
+				_ = lblWorkTime.SetText(time.Now().Format("15:04:05"))
 				if err != nil {
+					lblWork.SetTextColor(walk.RGB(255, 0, 0))
+					_ = lblWork.SetText(fmt.Sprintf("%s: %v", what, err))
 					showErr(what, err.Error())
+				} else {
+					lblWork.SetTextColor(walk.RGB(0, 0, 128))
+					_ = lblWork.SetText(fmt.Sprintf("%s: выполнено", what))
 				}
 
 			})
@@ -170,38 +189,44 @@ func runMainWindow() error {
 						},
 					},
 
-					Composite{
-						AssignTo: &pnWork,
-						Layout: HBox{
-							MarginsZero: true,
-						},
-						Children: []Widget{
-							SplitButton{
-								Text: "Управление",
-								MenuItems: []MenuItem{
-									Action{
-										Text: "Опрос",
-										OnTriggered: func() {
-											doWork("опрос", interrogateProducts)
-										},
-									},
-									Action{
-										Text: "Настройка ДАФ-М",
-									},
+					SplitButton{
+						Text:     "Управление",
+						AssignTo: &sbRun,
+						MenuItems: []MenuItem{
+							Action{
+								Text: "Опрос",
+								OnTriggered: func() {
+									doWork("опрос", interrogateProducts)
 								},
 							},
-							Label{Text: "Код:"},
-							NumberEdit{AssignTo: &neCmd},
-							Label{Text: "Аргумент:"},
-							NumberEdit{AssignTo: &neArg, Decimals: 2, MinSize: Size{80, 0}},
-							PushButton{Text: "Выполнить", OnClicked: func() {
-								cmd := modbus.DevCmd(neCmd.Value())
-								arg := neArg.Value()
-								doWork(fmt.Sprintf("Оправка команды %d,%v", cmd, arg), func() error {
-									return sendCmd(cmd, arg)
-								})
-							}},
+							Action{
+								Text: "Настройка ДАФ-М",
+							},
+							Separator{},
+							Action{
+								Text: "ПГС1",
+							},
+							Action{
+								Text: "ПГС2",
+							},
+							Action{
+								Text: "ПГС3",
+							},
+							Action{
+								Text: "ПГС4",
+							},
+							Action{
+								Text: "Отключить газ",
+							},
 						},
+					},
+
+					Label{
+						AssignTo:  &lblWorkTime,
+						TextColor: walk.RGB(0, 128, 0),
+					},
+					Label{
+						AssignTo: &lblWork,
 					},
 				},
 			},
@@ -280,6 +305,25 @@ func runMainWindow() error {
 							newNumberEditPgs(data.Gas3),
 							Label{Text: "ПГС4:"},
 							newNumberEditPgs(data.Gas4),
+
+							GroupBox{
+								AssignTo: &gbCmd,
+								Layout:   VBox{},
+								Title:    "Команда:",
+								Children: []Widget{
+									Label{Text: "Код:"},
+									NumberEdit{AssignTo: &neCmd},
+									Label{Text: "Аргумент:"},
+									NumberEdit{AssignTo: &neArg, Decimals: 2, MinSize: Size{80, 0}},
+									PushButton{Text: "Выполнить", OnClicked: func() {
+										cmd := modbus.DevCmd(neCmd.Value())
+										arg := neArg.Value()
+										doWork(fmt.Sprintf("Оправка команды %d,%v", cmd, arg), func() error {
+											return sendCmd(cmd, arg)
+										})
+									}},
+								},
+							},
 						},
 					},
 				},
