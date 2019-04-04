@@ -166,6 +166,25 @@ func runMainWindow() error {
 		}
 	}
 
+	productColumns := make([]TableViewColumn, pcConnection+1)
+
+	{
+		x := productColumns
+		type t = TableViewColumn
+		x[pcAddr] = t{Title: "Адрес", Width: 80}
+		x[pcSerialNumber] = t{Title: "Номер", Width: 80}
+		x[pcProductID] = t{Title: "ID", Width: 80}
+		x[pcConcentration] = t{Title: "Концентрация", Width: 150, Precision: 3}
+		x[pcCurrent] = t{Title: "Ток", Width: 100, Precision: 1}
+		x[pcThreshold1] = t{Title: "Порог 1", Width: 120, Precision: 1}
+		x[pcThreshold2] = t{Title: "Порог 2", Width: 120, Precision: 1}
+		x[pcMode] = t{Title: "Режим"}
+		x[pcFailure] = t{Title: "Отказ"}
+		x[pcVersion] = t{Title: "Версия"}
+		x[pcGas] = t{Title: "Газ"}
+		x[pcConnection] = t{Title: "Связь"}
+	}
+
 	if err := (MainWindow{
 		AssignTo: &mainWindow,
 		Title: fmt.Sprintf("ЭН8800-6408 Партия ДАФ-М №%d %s", currentParty.PartyID,
@@ -197,6 +216,12 @@ func runMainWindow() error {
 								Text: "Опрос",
 								OnTriggered: func() {
 									doWork("опрос", interrogateProducts)
+								},
+							},
+							Action{
+								Text: "Настройка токового выхода",
+								OnTriggered: func() {
+									doWork("настройка токового выхода", setupCurrents)
 								},
 							},
 							Action{
@@ -240,15 +265,8 @@ func runMainWindow() error {
 						CheckBoxes:               true,
 						Model:                    lastPartyProductsModel,
 
-						Columns: []TableViewColumn{
-							{Title: "Адрес", Width: 80},
-							{Title: "Номер", Width: 100},
-							{Title: "Концентрация", Width: 150},
-							{Title: "Ток", Width: 100},
-							{Title: "Порог 1", Width: 120},
-							{Title: "Порог 2", Width: 120},
-							{Title: "Связь"},
-						},
+						Columns: productColumns,
+
 						ContextMenuItems: []MenuItem{
 							Action{
 								Text: "Создать новую партию",

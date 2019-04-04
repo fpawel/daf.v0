@@ -14,6 +14,54 @@ import (
 	"time"
 )
 
+func setupCurrents() error {
+
+	if err := sendCmd(0xB, 1); err != nil {
+		return merry.Append(err, "установка тока 4 мА")
+	}
+	time.Sleep(5 * time.Second)
+
+	for place, p := range data.GetProductsOfLastParty() {
+		if !p.Checked {
+			continue
+		}
+		var v Value6408
+		if err := read6408(place, p.Addr, &v); err != nil {
+			return err
+		}
+		err := sendCmdPlace(place, p.Addr, 9, v.Current)
+		if IsDeviceError(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := sendCmd(0xC, 1); err != nil {
+		return merry.Append(err, "установка тока 20 мА")
+	}
+	time.Sleep(5 * time.Second)
+
+	for place, p := range data.GetProductsOfLastParty() {
+		if !p.Checked {
+			continue
+		}
+		var v Value6408
+		if err := read6408(place, p.Addr, &v); err != nil {
+			return err
+		}
+		err := sendCmdPlace(place, p.Addr, 0xA, v.Current)
+		if IsDeviceError(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func interrogateProducts() error {
 	for {
 		if !data.LastPartyHasCheckedProduct() {
@@ -23,8 +71,20 @@ func interrogateProducts() error {
 			if !p.Checked {
 				continue
 			}
-			_, err := readProduct(place, p.Addr)
-			if err == nil || merry.Is(err, comm.ErrProtocol) || merry.Is(err, context.DeadlineExceeded) {
+			var (
+				dafValue  DafValue
+				value6408 Value6408
+			)
+			err := read6408(place, p.Addr, &value6408)
+			if merry.Is(err, context.Canceled) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if err = readDaf(place, p.Addr, &dafValue); err == nil ||
+				merry.Is(err, comm.ErrProtocol) ||
+				merry.Is(err, context.DeadlineExceeded) {
 				continue
 			}
 			if merry.Is(err, context.Canceled) {
@@ -35,45 +95,65 @@ func interrogateProducts() error {
 	}
 }
 
-func readProduct(place int, addr modbus.Addr) (ProductValue, error) {
+func read6408(place int, addr modbus.Addr, v *Value6408) error {
 	lastPartyProductsModel.setInterrogatePlace(place)
-	v, err := doReadProduct(addr)
-	if err == nil {
-		lastPartyProductsModel.setProductValue(place, v)
-	} else if merry.Is(err, comm.ErrProtocol) || merry.Is(err, context.DeadlineExceeded) {
-		lastPartyProductsModel.setProductConnection(place, false, err.Error())
-	}
-
-	if err == nil {
-		logrus.Infof("№%d-ADDR%d: конц=%v ток=%v П1=%v П2=%v", place+1, addr,
-			v.Concentration, v.Current, v.Threshold1, v.Threshold2)
-	} else {
-		logrus.Errorf("№%d-ADDR%d: %v", place+1, addr, err)
-	}
-
-	return v, err
-}
-
-func doReadProduct(addr modbus.Addr) (v ProductValue, err error) {
-
-	if v.Concentration, err = modbus.Read3BCD(portDaf, addr, 0); err != nil {
-		return
-	}
-
-	var b []byte
-	b, err = modbus.Read3(portDaf, 32, modbus.Var(addr-1)*2, 2, func(_, _ []byte) error {
+	defer func() {
+		lastPartyProductsModel.setInterrogatePlace(-1)
+	}()
+	b, err := modbus.Read3(portDaf, 32, modbus.Var(addr-1)*2, 2, func(_, _ []byte) error {
 		return nil
 	})
 	if err != nil {
-		return
+		return merry.Append(err, "запрос тока и состояния контактов реле")
 	}
 	b = b[3:]
-
 	v.Current = (float64(b[0])*256 + float64(b[1])) / 100
 	v.Threshold1 = b[3]&1 == 0
 	v.Threshold2 = b[3]&2 == 0
+	logrus.Debugf("адрес %d: %v", addr, *v)
+	lastPartyProductsModel.set6408Value(place, *v)
+	return nil
+}
 
-	return
+func readDaf(place int, addr modbus.Addr, v *DafValue) error {
+	lastPartyProductsModel.setInterrogatePlace(place)
+	defer func() {
+		lastPartyProductsModel.setInterrogatePlace(-1)
+	}()
+	if err := doReadDaf(addr, v); err != nil {
+		if merry.Is(err, comm.ErrProtocol) || merry.Is(err, context.DeadlineExceeded) {
+			lastPartyProductsModel.setProductConnection(place, false, err.Error())
+		}
+		logrus.Errorf("место %d, адрес %d: %v", place+1, addr, err)
+		return err
+	}
+	logrus.Debugf("место %d, адрес %d: %v", addr, *v)
+	lastPartyProductsModel.setDafValue(place, *v)
+	return nil
+}
+func doReadDaf(addr modbus.Addr, v *DafValue) (err error) {
+
+	for _, x := range []struct {
+		var3 modbus.Var
+		p    *float64
+	}{
+		{0x00, &v.Concentration},
+		{0x1C, &v.Threshold1},
+		{0x1E, &v.Threshold2},
+		{0x20, &v.Failure},
+		{0x36, &v.Version},
+		{0x3A, &v.VersionID},
+		{0x32, &v.Gas},
+	} {
+		if *x.p, err = modbus.Read3BCD(portDaf, addr, x.var3); err != nil {
+			return err
+		}
+	}
+
+	if v.Mode, err = modbus.ReadUInt16(portDaf, addr, 0x23); err != nil {
+		return err
+	}
+	return nil
 }
 
 func sendCmd(cmd modbus.DevCmd, arg float64) error {
@@ -90,31 +170,41 @@ func sendCmd(cmd modbus.DevCmd, arg float64) error {
 		if !p.Checked {
 			continue
 		}
-		lastPartyProductsModel.setInterrogatePlace(place)
-
-		err := modbus.Write32FloatProto(portDaf, p.Addr, 0x10, cmd, arg)
-
-		what := fmt.Sprintf("№%d-ADDR%d-SER%d-ID%d: команда %d, %v", place+1, p.Addr, p.Serial, p.ProductID, cmd, arg)
-		if err == nil {
-			logrus.Info(what)
-		} else {
-			logrus.Errorf("%s: %v", what, err)
+		err := sendCmdPlace(place, p.Addr, cmd, arg)
+		if merry.Is(err, context.Canceled) {
+			return nil
 		}
 
-		if err == nil {
-			lastPartyProductsModel.setProductConnection(place, true, fmt.Sprintf("команда %d, %v", cmd, arg))
-		} else {
-			if merry.Is(err, context.Canceled) {
-				return nil
-			}
-			if merry.Is(err, comm.ErrProtocol) || merry.Is(err, context.DeadlineExceeded) {
-				lastPartyProductsModel.setProductConnection(place, false, fmt.Sprintf("%v: команда %d, %v", err, cmd, arg))
-			} else {
-				return err
-			}
+		if IsDeviceError(err) {
+			continue
+		}
+
+		if err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func sendCmdPlace(place int, addr modbus.Addr, cmd modbus.DevCmd, arg float64) error {
+	lastPartyProductsModel.setInterrogatePlace(place)
+	defer func() {
+		lastPartyProductsModel.setInterrogatePlace(-1)
+	}()
+
+	err := modbus.Write32FloatProto(portDaf, addr, 0x10, cmd, arg)
+	if err == nil {
+		logrus.Infof("ДАФ №%d, адрес %d: запись в 32-ой регистр %X, %v", place+1, addr, cmd, arg)
+		lastPartyProductsModel.setProductConnection(place, true, fmt.Sprintf("запись в 32-ой регистр %X, %v", cmd, arg))
+		return nil
+	}
+	logrus.Errorf("ДАФ №%d, адрес %d: %v", place+1, addr, err)
+	lastPartyProductsModel.setProductConnection(place, false, err.Error())
+	return err
+}
+
+func IsDeviceError(err error) bool {
+	return merry.Is(err, comm.ErrProtocol) || merry.Is(err, context.DeadlineExceeded)
 }
 
 type port struct {
@@ -150,7 +240,7 @@ var (
 	portDaf = port{
 		Port: comport.NewPort("стенд", serial.Config{Baud: 9600}, onComport),
 		Config: comm.Config{
-			ReadByteTimeoutMillis: 30,
+			ReadByteTimeoutMillis: 50,
 			ReadTimeoutMillis:     1000,
 			MaxAttemptsRead:       2,
 		},

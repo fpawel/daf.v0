@@ -22,7 +22,7 @@ func EnsureManifestFile() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	b, err := Asset("assets/exe.manifest")
+	b, err := Asset("assets/6408.exe.manifest")
 	if err != nil {
 		log.Fatal(err)
 	}
