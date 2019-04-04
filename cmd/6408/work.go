@@ -10,6 +10,7 @@ import (
 	"github.com/fpawel/elco/pkg/serial-comm/comport"
 	"github.com/fpawel/elco/pkg/serial-comm/modbus"
 	"github.com/fpawel/serial"
+	"github.com/hako/durafmt"
 	"github.com/sirupsen/logrus"
 	"time"
 )
@@ -92,6 +93,7 @@ func interrogateProducts() error {
 			}
 			return err
 		}
+		return nil
 	}
 }
 
@@ -203,6 +205,29 @@ func sendCmdPlace(place int, addr modbus.Addr, cmd modbus.DevCmd, arg float64) e
 	return err
 }
 
+func blowGas(gas data.Gas) error {
+	if err := switchGas(gas); err != nil {
+		return err
+	}
+	return delay(fmt.Sprintf("продувка ПГС%d", gas), 5*time.Minute)
+}
+
+func switchGas(gas data.Gas) error {
+
+	req := modbus.Req{
+		Addr:     33,
+		ProtoCmd: 0x10,
+		Data:     []byte{0, 32, 0, 1, 2, 0, byte(gas)},
+	}
+	_, err := portDaf.GetResponse(req.Bytes(), func(_, response []byte) error {
+		return req.CheckResponse(response)
+	})
+	if err != nil {
+		err = merry.Appendf(err, "газовый блок: %d", gas)
+	}
+	return err
+}
+
 func IsDeviceError(err error) bool {
 	return merry.Is(err, comm.ErrProtocol) || merry.Is(err, context.DeadlineExceeded)
 }
@@ -227,13 +252,53 @@ func (x port) GetResponse(request []byte, prs comm.ResponseParser) ([]byte, erro
 	return x.Port.GetResponse(request, x.Config, comportContext, prs)
 }
 
-func onComport(entry comport.Entry) {
-	if entry.Error == nil {
-		logrus.Debugln(entry)
-	} else {
-		logrus.Errorln(entry)
-	}
+func delay(what string, total time.Duration) error {
 
+	originalComportContext := comportContext
+	ctxDelay, doSkipDelay := context.WithTimeout(comportContext, total)
+	comportContext = ctxDelay
+	defer func() {
+		comportContext = originalComportContext
+		guiHideDelay()
+	}()
+	startMoment := time.Now()
+
+	skipDelay = func() {
+		doSkipDelay()
+		logrus.Warnf("%s %s: задержка прервана: %s", what, durafmt.Parse(total),
+			durafmt.Parse(time.Since(startMoment)))
+	}
+	guiShowDelay(what, total)
+
+	for {
+		if !data.LastPartyHasCheckedProduct() {
+			return errors.New("не выбрано ни одной строки в таблице приборов текущей партии")
+		}
+		for place, p := range data.GetProductsOfLastParty() {
+			if ctxDelay.Err() != nil {
+				return nil
+			}
+			if !p.Checked {
+				continue
+			}
+
+			var dafValue DafValue
+			err := readDaf(place, p.Addr, &dafValue)
+			if err == nil ||
+				merry.Is(err, comm.ErrProtocol) ||
+				merry.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+			if merry.Is(err, context.Canceled) {
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+func onComport(entry comport.Entry) {
+	logrus.Debugln(entry)
 }
 
 var (
@@ -260,5 +325,9 @@ var (
 	}
 
 	cancelComport  = func() {}
+	skipDelay      = func() {}
 	comportContext context.Context
+
+	guiShowDelay func(what string, total time.Duration)
+	guiHideDelay func()
 )

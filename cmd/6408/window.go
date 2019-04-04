@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/ansel1/merry"
 	"github.com/fpawel/daf/internal/data"
 	"github.com/fpawel/elco/pkg/serial-comm/comport"
 	"github.com/fpawel/elco/pkg/serial-comm/modbus"
+	"github.com/hako/durafmt"
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
+	"github.com/sirupsen/logrus"
 	"log"
 	"time"
 )
@@ -64,18 +67,23 @@ func runMainWindow() error {
 		cbType,
 		cbComportDaf,
 		cbComportHart *walk.ComboBox
-		nePgs      [4]*walk.NumberEdit
-		tvProducts *walk.TableView
+		nePgs           [4]*walk.NumberEdit
+		tblViewProducts *walk.TableView
 
 		neCmd, neArg         *walk.NumberEdit
 		pbCancelWork         *walk.PushButton
 		lblWork, lblWorkTime *walk.Label
 
-		sbRun *walk.SplitButton
-		gbCmd *walk.GroupBox
+		sbRun      *walk.SplitButton
+		gbCmd      *walk.GroupBox
+		mainWindow *walk.MainWindow
+
+		currentParty = data.LastParty()
 	)
 
-	var currentParty = data.LastParty()
+	lastPartyProductsModel.synchronize = func(f func()) {
+		tblViewProducts.Synchronize(f)
+	}
 
 	showErr := func(title, text string) {
 		walk.MsgBox(mainWindow, title,
@@ -87,6 +95,11 @@ func runMainWindow() error {
 			showErr("Ошибка данных", fmt.Sprintf("%v: %v", currentParty, err))
 		}
 	}
+
+	delayProgress := new(delayProgressHelp)
+
+	guiShowDelay = delayProgress.Show
+	guiHideDelay = delayProgress.Hide
 
 	var workStarted bool
 	doWork := func(what string, work func() error) {
@@ -107,6 +120,7 @@ func runMainWindow() error {
 		lblWork.SetTextColor(walk.RGB(128, 0, 0))
 		go func() {
 			err := work()
+
 			_ = portHart.Port.Close()
 			_ = portDaf.Port.Close()
 			mainWindow.Synchronize(func() {
@@ -119,9 +133,15 @@ func runMainWindow() error {
 				lastPartyProductsModel.setInterrogatePlace(-1)
 				_ = lblWorkTime.SetText(time.Now().Format("15:04:05"))
 				if err != nil {
-					lblWork.SetTextColor(walk.RGB(255, 0, 0))
-					_ = lblWork.SetText(fmt.Sprintf("%s: %v", what, err))
-					showErr(what, err.Error())
+					if merry.Is(err, context.Canceled) {
+						lblWork.SetTextColor(walk.RGB(139, 69, 19))
+						_ = lblWork.SetText(fmt.Sprintf("%s: прервано", what))
+					} else {
+						lblWork.SetTextColor(walk.RGB(255, 0, 0))
+						_ = lblWork.SetText(fmt.Sprintf("%s: %v", what, err))
+						showErr(what, err.Error())
+					}
+
 				} else {
 					lblWork.SetTextColor(walk.RGB(0, 0, 128))
 					_ = lblWork.SetText(fmt.Sprintf("%s: выполнено", what))
@@ -132,7 +152,7 @@ func runMainWindow() error {
 	}
 
 	executeProductDialog := func() {
-		n := tvProducts.CurrentIndex()
+		n := tblViewProducts.CurrentIndex()
 		if n < 0 || n >= len(lastPartyProductsModel.items) {
 			return
 		}
@@ -185,6 +205,57 @@ func runMainWindow() error {
 		x[pcConnection] = t{Title: "Связь"}
 	}
 
+	menuWorks := []MenuItem{
+		Action{
+			Text: "Опрос",
+			OnTriggered: func() {
+				doWork("опрос", interrogateProducts)
+			},
+		},
+		Action{
+			Text: "Настройка токового выхода",
+			OnTriggered: func() {
+				doWork("настройка токового выхода", setupCurrents)
+			},
+		},
+		Separator{},
+		Action{
+			Text: "отключить газ",
+			OnTriggered: func() {
+				doWork("отключить газ", func() error {
+					return switchGas(0)
+				})
+			},
+		},
+
+		Action{
+			Text: "задержка",
+			OnTriggered: func() {
+				doWork("некоторая задержка", func() error {
+
+					if err := delay("sdfsdf", time.Minute); err != nil {
+						return err
+					}
+
+					return delay("rtyrty", time.Minute)
+				})
+			},
+		},
+	}
+
+	for gas := data.Gas1; gas < 5; gas++ {
+		gas := gas
+		s := fmt.Sprintf("газ %d", gas)
+		menuWorks = append(menuWorks, Action{
+			Text: s,
+			OnTriggered: func() {
+				doWork(s, func() error {
+					return switchGas(gas)
+				})
+			},
+		})
+	}
+
 	if err := (MainWindow{
 		AssignTo: &mainWindow,
 		Title: fmt.Sprintf("ЭН8800-6408 Партия ДАФ-М №%d %s", currentParty.PartyID,
@@ -209,41 +280,9 @@ func runMainWindow() error {
 					},
 
 					SplitButton{
-						Text:     "Управление",
-						AssignTo: &sbRun,
-						MenuItems: []MenuItem{
-							Action{
-								Text: "Опрос",
-								OnTriggered: func() {
-									doWork("опрос", interrogateProducts)
-								},
-							},
-							Action{
-								Text: "Настройка токового выхода",
-								OnTriggered: func() {
-									doWork("настройка токового выхода", setupCurrents)
-								},
-							},
-							Action{
-								Text: "Настройка ДАФ-М",
-							},
-							Separator{},
-							Action{
-								Text: "ПГС1",
-							},
-							Action{
-								Text: "ПГС2",
-							},
-							Action{
-								Text: "ПГС3",
-							},
-							Action{
-								Text: "ПГС4",
-							},
-							Action{
-								Text: "Отключить газ",
-							},
-						},
+						Text:      "Управление",
+						AssignTo:  &sbRun,
+						MenuItems: menuWorks,
 					},
 
 					Label{
@@ -253,13 +292,14 @@ func runMainWindow() error {
 					Label{
 						AssignTo: &lblWork,
 					},
+					delayProgress.Widget(),
 				},
 			},
 			ScrollView{
 				Layout: HBox{MarginsZero: true, SpacingZero: true},
 				Children: []Widget{
 					TableView{
-						AssignTo:                 &tvProducts,
+						AssignTo:                 &tblViewProducts,
 						NotSortableByHeaderClick: true,
 						LastColumnStretched:      true,
 						CheckBoxes:               true,
@@ -352,6 +392,7 @@ func runMainWindow() error {
 	}
 
 	pbCancelWork.SetVisible(false)
+
 	mainWindow.Run()
 
 	if err := settings.Save(); err != nil {
@@ -447,4 +488,75 @@ func indexOfProductTypeCode(productTypeCode int) int {
 	return -1
 }
 
-var mainWindow *walk.MainWindow
+type delayProgressHelp struct {
+	*walk.Composite
+	pb     *walk.ProgressBar
+	lbl    *walk.Label
+	ticker *time.Ticker
+	done   chan struct{}
+}
+
+func (x *delayProgressHelp) Show(what string, total time.Duration) {
+	startMoment := time.Now()
+	x.done = make(chan struct{}, 1)
+	x.ticker = time.NewTicker(time.Millisecond * 500)
+	x.Composite.Synchronize(func() {
+		x.SetVisible(true)
+		x.pb.SetRange(0, int(total.Nanoseconds()/1000000))
+		x.pb.SetValue(0)
+		_ = x.lbl.SetText(fmt.Sprintf("%s: %s", what, durafmt.Parse(total)))
+	})
+	go func() {
+		defer func() {
+			logrus.Debugln("timer closed")
+		}()
+		for {
+			select {
+			case <-x.ticker.C:
+				x.Composite.Synchronize(func() {
+					x.pb.SetValue(int(time.Since(startMoment).Nanoseconds() / 1000000))
+				})
+			case <-x.done:
+				return
+			}
+		}
+	}()
+}
+
+func (x *delayProgressHelp) Hide() {
+	x.ticker.Stop()
+	close(x.done)
+	x.Composite.Synchronize(func() {
+		x.SetVisible(false)
+	})
+
+}
+
+func (x *delayProgressHelp) Widget() Widget {
+	return Composite{
+		AssignTo: &x.Composite,
+		Layout:   HBox{},
+		Visible:  false,
+		Children: []Widget{
+			Label{AssignTo: &x.lbl},
+			ScrollView{
+				Layout:        VBox{SpacingZero: true, MarginsZero: true},
+				VerticalFixed: true,
+				Children: []Widget{
+					ProgressBar{
+						AssignTo: &x.pb,
+						MaxSize:  Size{0, 15},
+						MinSize:  Size{0, 15},
+					},
+				},
+			},
+
+			PushButton{
+				Text: "Продолжить без задержки",
+				OnClicked: func() {
+					skipDelay()
+				},
+			},
+		},
+	}
+}

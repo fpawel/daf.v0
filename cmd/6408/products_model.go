@@ -10,6 +10,7 @@ import (
 
 type productsModel struct {
 	walk.TableModelBase
+	synchronize      func(func())
 	items            []productModel
 	interrogatePlace int
 }
@@ -96,21 +97,21 @@ l1:
 func (m *productsModel) setDafValue(place int, v DafValue) {
 	m.items[place].Daf = &v
 	m.items[place].connection = &connectionInfo{true, v.String()}
-	mainWindow.Synchronize(func() {
+	m.synchronize(func() {
 		m.PublishRowChanged(place)
 	})
 }
 
 func (m *productsModel) set6408Value(place int, v Value6408) {
 	m.items[place].Value6408 = &v
-	mainWindow.Synchronize(func() {
+	m.synchronize(func() {
 		m.PublishRowChanged(place)
 	})
 }
 
 func (m *productsModel) setProductConnection(place int, ok bool, text string) {
 	m.items[place].connection = &connectionInfo{ok, text}
-	mainWindow.Synchronize(func() {
+	m.synchronize(func() {
 		m.PublishRowChanged(place)
 	})
 }
@@ -120,7 +121,7 @@ func (m *productsModel) setInterrogatePlace(place int) {
 		return
 	}
 	m.interrogatePlace = place
-	mainWindow.Synchronize(func() {
+	m.synchronize(func() {
 		m.PublishRowsReset()
 	})
 }
