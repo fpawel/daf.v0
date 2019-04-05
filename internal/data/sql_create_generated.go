@@ -6,13 +6,22 @@ PRAGMA encoding = 'UTF-8';
 
 CREATE TABLE IF NOT EXISTS party
 (
-    party_id   INTEGER PRIMARY KEY NOT NULL,
-    created_at TIMESTAMP           NOT NULL                     DEFAULT (datetime('now')) UNIQUE,
-    type       INTEGER             NOT NULL                     DEFAULT 1 CHECK ( type > 0 ),
-    pgs1       REAL                NOT NULL CHECK ( pgs1 >= 0 ) DEFAULT 0,
-    pgs2       REAL                NOT NULL CHECK ( pgs2 >= 0 ) DEFAULT 4,
-    pgs3       REAL                NOT NULL CHECK ( pgs3 >= 0 ) DEFAULT 7.5,
-    pgs4       REAL                NOT NULL CHECK ( pgs4 >= 0 ) DEFAULT 12
+    party_id              INTEGER PRIMARY KEY NOT NULL,
+    created_at            TIMESTAMP           NOT NULL                     DEFAULT (datetime('now')) UNIQUE,
+    type                  INTEGER             NOT NULL                     DEFAULT 1 CHECK ( type > 0 ),
+    component             TEXT                NOT NULL                     DEFAULT 'гексан C₆H₁₄',
+    scale                 REAL                NOT NULL                     DEFAULT 1000,
+    absolute_error_range  REAL                NOT NULL                     DEFAULT 200,
+    absolute_error_limit  REAL                NOT NULL                     DEFAULT 50,
+    relative_error_limit  REAL                NOT NULL                     DEFAULT 20,
+    threshold1_production REAL                NOT NULL                     DEFAULT 200,
+    threshold2_production REAL                NOT NULL                     DEFAULT 1000,
+    threshold1_test       REAL                NOT NULL                     DEFAULT 200,
+    threshold2_test       REAL                NOT NULL                     DEFAULT 1000,
+    pgs1                  REAL                NOT NULL CHECK ( pgs1 >= 0 ) DEFAULT 0,
+    pgs2                  REAL                NOT NULL CHECK ( pgs2 >= 0 ) DEFAULT 200,
+    pgs3                  REAL                NOT NULL CHECK ( pgs3 >= 0 ) DEFAULT 1000,
+    pgs4                  REAL                NOT NULL CHECK ( pgs4 >= 0 ) DEFAULT 2000
 );
 
 CREATE TABLE IF NOT EXISTS product
@@ -47,4 +56,6 @@ CREATE VIEW IF NOT EXISTS last_party AS
 SELECT *
 FROM party
 ORDER BY created_at DESC
-LIMIT 1;`
+LIMIT 1;
+
+`

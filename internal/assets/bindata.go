@@ -294,14 +294,14 @@ type bintree struct {
 }
 
 var _bintree = &bintree{nil, map[string]*bintree{
-	"assets": &bintree{nil, map[string]*bintree{
-		"exe.manifest": &bintree{assetsExeManifest, map[string]*bintree{}},
-		"png16": &bintree{nil, map[string]*bintree{
-			"checkmark.png": &bintree{assetsPng16CheckmarkPng, map[string]*bintree{}},
-			"error.png":     &bintree{assetsPng16ErrorPng, map[string]*bintree{}},
-			"forward.png":   &bintree{assetsPng16ForwardPng, map[string]*bintree{}},
-			"pin_off.png":   &bintree{assetsPng16Pin_offPng, map[string]*bintree{}},
-			"pin_on.png":    &bintree{assetsPng16Pin_onPng, map[string]*bintree{}},
+	"assets": {nil, map[string]*bintree{
+		"exe.manifest": {assetsExeManifest, map[string]*bintree{}},
+		"png16": {nil, map[string]*bintree{
+			"checkmark.png": {assetsPng16CheckmarkPng, map[string]*bintree{}},
+			"error.png":     {assetsPng16ErrorPng, map[string]*bintree{}},
+			"forward.png":   {assetsPng16ForwardPng, map[string]*bintree{}},
+			"pin_off.png":   {assetsPng16Pin_offPng, map[string]*bintree{}},
+			"pin_on.png":    {assetsPng16Pin_onPng, map[string]*bintree{}},
 		}},
 	}},
 }}

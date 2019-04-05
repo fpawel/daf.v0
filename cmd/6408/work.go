@@ -63,6 +63,10 @@ func setupCurrents() error {
 	return nil
 }
 
+func setupThresholds() error {
+	return nil
+}
+
 func interrogateProducts() error {
 	for {
 		if !data.LastPartyHasCheckedProduct() {
@@ -93,7 +97,6 @@ func interrogateProducts() error {
 			}
 			return err
 		}
-		return nil
 	}
 }
 

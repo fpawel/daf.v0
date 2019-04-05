@@ -64,10 +64,8 @@ func runMainWindow() error {
 	}
 
 	var (
-		cbType,
 		cbComportDaf,
 		cbComportHart *walk.ComboBox
-		nePgs           [4]*walk.NumberEdit
 		tblViewProducts *walk.TableView
 
 		neCmd, neArg         *walk.NumberEdit
@@ -77,8 +75,6 @@ func runMainWindow() error {
 		sbRun      *walk.SplitButton
 		gbCmd      *walk.GroupBox
 		mainWindow *walk.MainWindow
-
-		currentParty = data.LastParty()
 	)
 
 	lastPartyProductsModel.synchronize = func(f func()) {
@@ -88,12 +84,6 @@ func runMainWindow() error {
 	showErr := func(title, text string) {
 		walk.MsgBox(mainWindow, title,
 			text, walk.MsgBoxIconError|walk.MsgBoxOK)
-	}
-
-	saveParty := func() {
-		if err := currentParty.Save(); err != nil {
-			showErr("Ошибка данных", fmt.Sprintf("%v: %v", currentParty, err))
-		}
 	}
 
 	delayProgress := new(delayProgressHelp)
@@ -173,19 +163,6 @@ func runMainWindow() error {
 		lastPartyProductsModel.PublishRowChanged(n)
 	}
 
-	newNumberEditPgs := func(n data.Gas) NumberEdit {
-		return NumberEdit{
-			Value:    currentParty.Pgs(n),
-			AssignTo: &nePgs[n-1],
-			MinValue: 0,
-			Decimals: 2,
-			OnValueChanged: func() {
-				currentParty.SetPgs(n, nePgs[n-1].Value())
-				saveParty()
-			},
-		}
-	}
-
 	productColumns := make([]TableViewColumn, pcConnection+1)
 
 	{
@@ -257,9 +234,8 @@ func runMainWindow() error {
 	}
 
 	if err := (MainWindow{
-		AssignTo: &mainWindow,
-		Title: fmt.Sprintf("ЭН8800-6408 Партия ДАФ-М №%d %s", currentParty.PartyID,
-			currentParty.CreatedAt.Format("02.01.2006")),
+		AssignTo:   &mainWindow,
+		Title:      "ЭН8800-6408 Партия ДАФ-М " + data.LastParty().String(),
 		Name:       "MainWindow",
 		Font:       Font{PointSize: 12, Family: "Segoe UI"},
 		Background: SolidColorBrush{Color: walk.RGB(255, 255, 255)},
@@ -312,6 +288,14 @@ func runMainWindow() error {
 								Text: "Создать новую партию",
 							},
 							Action{
+								Text: "Параметры партии",
+								OnTriggered: func() {
+									if err := runPartyDialog(mainWindow); err != nil {
+										panic(err)
+									}
+								},
+							},
+							Action{
 								Text: "Добавить прибор в партию",
 								Shortcut: Shortcut{
 									Key: walk.KeyInsert,
@@ -343,27 +327,6 @@ func runMainWindow() error {
 									newComboBoxComport(&cbComportHart, "comport_hart"),
 								},
 							},
-							Label{Text: "Исполнение:"},
-							ComboBox{
-								Model:         productTypes,
-								AssignTo:      &cbType,
-								DisplayMember: "Name",
-								CurrentIndex:  indexOfProductTypeCode(currentParty.Type),
-								OnCurrentIndexChanged: func() {
-									currentParty.Type = productTypes[cbType.CurrentIndex()].Code
-									saveParty()
-
-								},
-							},
-							Label{Text: "ПГС1:"},
-							newNumberEditPgs(data.Gas1),
-							Label{Text: "ПГС2:"},
-							newNumberEditPgs(data.Gas2),
-							Label{Text: "ПГС3:"},
-							newNumberEditPgs(data.Gas3),
-							Label{Text: "ПГС4:"},
-							newNumberEditPgs(data.Gas4),
-
 							GroupBox{
 								AssignTo: &gbCmd,
 								Layout:   VBox{},
@@ -392,7 +355,6 @@ func runMainWindow() error {
 	}
 
 	pbCancelWork.SetVisible(false)
-
 	mainWindow.Run()
 
 	if err := settings.Save(); err != nil {
@@ -466,26 +428,6 @@ func runProductDialog(owner walk.Form, p *data.Product) (int, error) {
 			},
 		},
 	}.Run(owner)
-}
-
-var productTypes = []struct {
-	Name string
-	Code int
-}{
-	{"ДАФ-М-01", 1},
-	{"ДАФ-М-05X", 6},
-	{"ДАФ-М-06TPX", 9},
-	{"ДАФ-М-08X", 80},
-	{"ДАФ-М-08TPX", 85},
-}
-
-func indexOfProductTypeCode(productTypeCode int) int {
-	for i, x := range productTypes {
-		if x.Code == productTypeCode {
-			return i
-		}
-	}
-	return -1
 }
 
 type delayProgressHelp struct {
