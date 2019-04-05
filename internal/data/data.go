@@ -3,7 +3,6 @@ package data
 import (
 	"database/sql"
 	"github.com/fpawel/elco/pkg/winapp"
-	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"gopkg.in/reform.v1"
 	"gopkg.in/reform.v1/dialects/sqlite3"
@@ -21,7 +20,8 @@ const (
 	Gas4 Gas = 4
 )
 
-func GetLastParty(party *Party) {
+func GetLastParty() (party *Party) {
+	party = new(Party)
 	err := DBProducts.SelectOneTo(party, `ORDER BY created_at DESC LIMIT 1;`)
 	if err == reform.ErrNoRows {
 		partyID := CreateNewParty()
@@ -30,27 +30,41 @@ func GetLastParty(party *Party) {
 	if err != nil {
 		panic(err)
 	}
+	return
 }
 
-func GetProductsByPartyID(partyID int64, products *[]*Product) {
+func GetLastPartyID() (partyID int64) {
+	row := DBProducts.QueryRow(`SELECT party_id FROM party ORDER BY created_at DESC LIMIT 1`)
+	if err := row.Scan(&partyID); err == sql.ErrNoRows {
+		CreateNewParty()
+	}
+	return
+}
+
+func GetProductsOfLastParty() (products []*Product) {
 	xs, err := DBProducts.SelectAllFrom(
-		ProductTable,
-		"WHERE party_id = ? ORDER BY place",
-		partyID)
+		ProductTable, "WHERE party_id = ? ORDER BY created_at", GetLastPartyID())
 	if err != nil {
 		panic(err)
 	}
 	for _, x := range xs {
 		p := x.(*Product)
-		*products = append(*products, p)
+		products = append(products, p)
 	}
 	return
 }
 
-func GetProductsOfLastParty(products *[]*Product) {
-	p := new(Party)
-	GetLastParty(p)
-	GetProductsByPartyID(p.PartyID, products)
+func GetProductsByPartyID(partyID int64) (products []*Product) {
+	xs, err := DBProducts.SelectAllFrom(
+		ProductTable,
+		"WHERE party_id = ? ORDER BY created_at", partyID)
+	if err != nil {
+		panic(err)
+	}
+	for _, x := range xs {
+		p := x.(*Product)
+		products = append(products, p)
+	}
 	return
 }
 
@@ -61,20 +75,6 @@ func HasCheckedProducts(products []*Product) bool {
 		}
 	}
 	return false
-}
-
-func LastPartyHasCheckedProduct() (result bool) {
-	if err := DBxProducts.Get(&result,
-		`SELECT exists( SELECT * FROM product WHERE party_id = (SELECT party_id FROM last_party) AND checked )`); err != nil {
-		panic(err)
-	}
-	return
-}
-
-func GetProductByID(productID int64, product *Product) {
-	product = new(Product)
-	err = DBProducts.Get(product, `SELECT * FROM product WHERE product_id = ?`, productID)
-	return
 }
 
 func CreateNewParty() int64 {
@@ -90,8 +90,8 @@ func CreateNewParty() int64 {
 }
 
 var (
-	DBxProducts *sqlx.DB
-	DBProducts  *reform.DB
+	//DBxProducts *sqlx.DB
+	DBProducts *reform.DB
 )
 
 func init() {
@@ -119,6 +119,6 @@ func init() {
 		panic(err)
 	}
 
-	DBxProducts = sqlx.NewDb(conn, "sqlite3")
+	//DBxProducts = sqlx.NewDb(conn, "sqlite3")
 	DBProducts = reform.NewDB(conn, sqlite3.Dialect, nil)
 }

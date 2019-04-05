@@ -10,15 +10,16 @@ func runPartyDialog(owner walk.Form) error {
 	var (
 		dlg           *walk.Dialog
 		cbGas, cbType *walk.ComboBox
+		btn           *walk.PushButton
 		saveEditParty bool
-		party         = data.LastParty()
+		party         = data.GetLastParty()
 	)
 
 	saveParty := func() {
 		if !saveEditParty {
 			return
 		}
-		if err := party.Save(); err != nil {
+		if err := data.DBProducts.Save(party); err != nil {
 			walk.MsgBox(dlg, "Ошибка данных",
 				err.Error(), walk.MsgBoxIconError|walk.MsgBoxOK)
 		}
@@ -63,9 +64,11 @@ func runPartyDialog(owner walk.Form) error {
 	}
 
 	dialog := Dialog{
-		Font:     Font{PointSize: 12, Family: "Segoe UI"},
-		AssignTo: &dlg,
-		Layout:   Grid{Columns: 2},
+		Font:          Font{PointSize: 12, Family: "Segoe UI"},
+		AssignTo:      &dlg,
+		Layout:        Grid{Columns: 2},
+		DefaultButton: &btn,
+		CancelButton:  &btn,
 		Children: []Widget{
 			Label{Text: "Исполнение:", TextAlignment: AlignFar},
 			ComboBox{
@@ -132,6 +135,15 @@ func runPartyDialog(owner walk.Form) error {
 			nePartyField(&party.Threshold1Test, 0, 0),
 			Label{Text: "Порог 2, настройка:", TextAlignment: AlignFar},
 			nePartyField(&party.Threshold2Test, 0, 0),
+
+			Composite{},
+			PushButton{
+				AssignTo: &btn,
+				Text:     "Закрыть",
+				OnClicked: func() {
+					dlg.Accept()
+				},
+			},
 		},
 	}
 	if err := dialog.Create(owner); err != nil {

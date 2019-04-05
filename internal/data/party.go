@@ -11,7 +11,7 @@ import (
 type Party struct {
 	PartyID              int64     `reform:"party_id,pk"`
 	CreatedAt            time.Time `reform:"created_at"`
-	Type                 int64     `reform:"type"`
+	Type                 int       `reform:"type"`
 	Component            string    `reform:"component"`
 	Scale                float64   `reform:"scale"`
 	AbsoluteErrorRange   float64   `reform:"absolute_error_range"`

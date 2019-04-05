@@ -27,7 +27,7 @@ func (v *productValueTableType) Name() string {
 
 // Columns returns a new slice of column names for that view or table in SQL database.
 func (v *productValueTableType) Columns() []string {
-	return []string{"product_value_id", "product_id", "created_at", "gas", "name", "concentration", "current", "threshold1", "threshold2", "ok", "message"}
+	return []string{"product_value_id", "product_id", "created_at", "gas", "name", "concentration", "current", "threshold1", "threshold2"}
 }
 
 // NewStruct makes a new struct for that view or table.
@@ -47,13 +47,13 @@ func (v *productValueTableType) PKColumnIndex() uint {
 
 // ProductValueTable represents product_value view or table in SQL database.
 var ProductValueTable = &productValueTableType{
-	s: parse.StructInfo{Type: "ProductValue", SQLSchema: "", SQLName: "product_value", Fields: []parse.FieldInfo{{Name: "ProductValueID", Type: "int64", Column: "product_value_id"}, {Name: "ProductID", Type: "int64", Column: "product_id"}, {Name: "CreatedAt", Type: "time.Time", Column: "created_at"}, {Name: "Gas", Type: "Gas", Column: "gas"}, {Name: "Name", Type: "string", Column: "name"}, {Name: "Concentration", Type: "float64", Column: "concentration"}, {Name: "Current", Type: "float64", Column: "current"}, {Name: "Threshold1", Type: "bool", Column: "threshold1"}, {Name: "Threshold2", Type: "bool", Column: "threshold2"}, {Name: "Ok", Type: "bool", Column: "ok"}, {Name: "Message", Type: "string", Column: "message"}}, PKFieldIndex: 0},
+	s: parse.StructInfo{Type: "ProductValue", SQLSchema: "", SQLName: "product_value", Fields: []parse.FieldInfo{{Name: "ProductValueID", Type: "int64", Column: "product_value_id"}, {Name: "ProductID", Type: "int64", Column: "product_id"}, {Name: "CreatedAt", Type: "time.Time", Column: "created_at"}, {Name: "Gas", Type: "Gas", Column: "gas"}, {Name: "Name", Type: "string", Column: "name"}, {Name: "Concentration", Type: "float64", Column: "concentration"}, {Name: "Current", Type: "float64", Column: "current"}, {Name: "Threshold1", Type: "bool", Column: "threshold1"}, {Name: "Threshold2", Type: "bool", Column: "threshold2"}}, PKFieldIndex: 0},
 	z: new(ProductValue).Values(),
 }
 
 // String returns a string representation of this struct or record.
 func (s ProductValue) String() string {
-	res := make([]string, 11)
+	res := make([]string, 9)
 	res[0] = "ProductValueID: " + reform.Inspect(s.ProductValueID, true)
 	res[1] = "ProductID: " + reform.Inspect(s.ProductID, true)
 	res[2] = "CreatedAt: " + reform.Inspect(s.CreatedAt, true)
@@ -63,8 +63,6 @@ func (s ProductValue) String() string {
 	res[6] = "Current: " + reform.Inspect(s.Current, true)
 	res[7] = "Threshold1: " + reform.Inspect(s.Threshold1, true)
 	res[8] = "Threshold2: " + reform.Inspect(s.Threshold2, true)
-	res[9] = "Ok: " + reform.Inspect(s.Ok, true)
-	res[10] = "Message: " + reform.Inspect(s.Message, true)
 	return strings.Join(res, ", ")
 }
 
@@ -81,8 +79,6 @@ func (s *ProductValue) Values() []interface{} {
 		s.Current,
 		s.Threshold1,
 		s.Threshold2,
-		s.Ok,
-		s.Message,
 	}
 }
 
@@ -99,8 +95,6 @@ func (s *ProductValue) Pointers() []interface{} {
 		&s.Current,
 		&s.Threshold1,
 		&s.Threshold2,
-		&s.Ok,
-		&s.Message,
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/ansel1/merry"
 	"github.com/fpawel/daf/internal/data"
+	"github.com/fpawel/daf/internal/viewmodel"
 	"github.com/fpawel/elco/pkg/serial-comm/comm"
 	"github.com/fpawel/elco/pkg/serial-comm/comport"
 	"github.com/fpawel/elco/pkg/serial-comm/modbus"
@@ -20,13 +21,13 @@ func setupCurrents() error {
 	if err := sendCmd(0xB, 1); err != nil {
 		return merry.Append(err, "установка тока 4 мА")
 	}
-	time.Sleep(5 * time.Second)
+	sleep(5 * time.Second)
 
 	for place, p := range data.GetProductsOfLastParty() {
 		if !p.Checked {
 			continue
 		}
-		var v Value6408
+		var v viewmodel.DafValue6408
 		if err := read6408(place, p.Addr, &v); err != nil {
 			return err
 		}
@@ -42,13 +43,13 @@ func setupCurrents() error {
 	if err := sendCmd(0xC, 1); err != nil {
 		return merry.Append(err, "установка тока 20 мА")
 	}
-	time.Sleep(5 * time.Second)
+	sleep(5 * time.Second)
 
 	for place, p := range data.GetProductsOfLastParty() {
 		if !p.Checked {
 			continue
 		}
-		var v Value6408
+		var v viewmodel.DafValue6408
 		if err := read6408(place, p.Addr, &v); err != nil {
 			return err
 		}
@@ -63,22 +64,38 @@ func setupCurrents() error {
 	return nil
 }
 
-func setupThresholds() error {
-	return nil
+func sleep(t time.Duration) {
+	timer := time.NewTimer(t)
+	defer func() {
+		if !timer.Stop() {
+			<-timer.C
+		}
+	}()
+	for {
+		select {
+		case <-timer.C:
+			return
+		case <-comportContext.Done():
+			return
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
 }
 
 func interrogateProducts() error {
 	for {
-		if !data.LastPartyHasCheckedProduct() {
+		products := data.GetProductsOfLastParty()
+		if !data.HasCheckedProducts(products) {
 			return errors.New("не выбрано ни одной строки в таблице приборов текущей партии")
 		}
-		for place, p := range data.GetProductsOfLastParty() {
+		for place, p := range products {
 			if !p.Checked {
 				continue
 			}
 			var (
-				dafValue  DafValue
-				value6408 Value6408
+				dafValue  viewmodel.DafValue
+				value6408 viewmodel.DafValue6408
 			)
 			err := read6408(place, p.Addr, &value6408)
 			if merry.Is(err, context.Canceled) {
@@ -100,10 +117,10 @@ func interrogateProducts() error {
 	}
 }
 
-func read6408(place int, addr modbus.Addr, v *Value6408) error {
-	lastPartyProductsModel.setInterrogatePlace(place)
+func read6408(place int, addr modbus.Addr, v *viewmodel.DafValue6408) error {
+	prodsMdl.SetInterrogatePlace(place)
 	defer func() {
-		lastPartyProductsModel.setInterrogatePlace(-1)
+		prodsMdl.SetInterrogatePlace(-1)
 	}()
 	b, err := modbus.Read3(portDaf, 32, modbus.Var(addr-1)*2, 2, func(_, _ []byte) error {
 		return nil
@@ -116,27 +133,27 @@ func read6408(place int, addr modbus.Addr, v *Value6408) error {
 	v.Threshold1 = b[3]&1 == 0
 	v.Threshold2 = b[3]&2 == 0
 	logrus.Debugf("адрес %d: %v", addr, *v)
-	lastPartyProductsModel.set6408Value(place, *v)
+	prodsMdl.Set6408Value(place, *v)
 	return nil
 }
 
-func readDaf(place int, addr modbus.Addr, v *DafValue) error {
-	lastPartyProductsModel.setInterrogatePlace(place)
+func readDaf(place int, addr modbus.Addr, v *viewmodel.DafValue) error {
+	prodsMdl.SetInterrogatePlace(place)
 	defer func() {
-		lastPartyProductsModel.setInterrogatePlace(-1)
+		prodsMdl.SetInterrogatePlace(-1)
 	}()
 	if err := doReadDaf(addr, v); err != nil {
 		if merry.Is(err, comm.ErrProtocol) || merry.Is(err, context.DeadlineExceeded) {
-			lastPartyProductsModel.setProductConnection(place, false, err.Error())
+			prodsMdl.SetProductConnection(place, false, err.Error())
 		}
 		logrus.Errorf("место %d, адрес %d: %v", place+1, addr, err)
 		return err
 	}
 	logrus.Debugf("место %d, адрес %d: %v", addr, *v)
-	lastPartyProductsModel.setDafValue(place, *v)
+	prodsMdl.SetDafValue(place, *v)
 	return nil
 }
-func doReadDaf(addr modbus.Addr, v *DafValue) (err error) {
+func doReadDaf(addr modbus.Addr, v *viewmodel.DafValue) (err error) {
 
 	for _, x := range []struct {
 		var3 modbus.Var
@@ -192,19 +209,19 @@ func sendCmd(cmd modbus.DevCmd, arg float64) error {
 }
 
 func sendCmdPlace(place int, addr modbus.Addr, cmd modbus.DevCmd, arg float64) error {
-	lastPartyProductsModel.setInterrogatePlace(place)
+	prodsMdl.SetInterrogatePlace(place)
 	defer func() {
-		lastPartyProductsModel.setInterrogatePlace(-1)
+		prodsMdl.SetInterrogatePlace(-1)
 	}()
 
 	err := modbus.Write32FloatProto(portDaf, addr, 0x10, cmd, arg)
 	if err == nil {
 		logrus.Infof("ДАФ №%d, адрес %d: запись в 32-ой регистр %X, %v", place+1, addr, cmd, arg)
-		lastPartyProductsModel.setProductConnection(place, true, fmt.Sprintf("запись в 32-ой регистр %X, %v", cmd, arg))
+		prodsMdl.SetProductConnection(place, true, fmt.Sprintf("запись в 32-ой регистр %X, %v", cmd, arg))
 		return nil
 	}
 	logrus.Errorf("ДАФ №%d, адрес %d: %v", place+1, addr, err)
-	lastPartyProductsModel.setProductConnection(place, false, err.Error())
+	prodsMdl.SetProductConnection(place, false, err.Error())
 	return err
 }
 
@@ -274,10 +291,11 @@ func delay(what string, total time.Duration) error {
 	guiShowDelay(what, total)
 
 	for {
-		if !data.LastPartyHasCheckedProduct() {
+		products := data.GetProductsOfLastParty()
+		if !data.HasCheckedProducts(products) {
 			return errors.New("не выбрано ни одной строки в таблице приборов текущей партии")
 		}
-		for place, p := range data.GetProductsOfLastParty() {
+		for place, p := range products {
 			if ctxDelay.Err() != nil {
 				return nil
 			}
@@ -285,7 +303,7 @@ func delay(what string, total time.Duration) error {
 				continue
 			}
 
-			var dafValue DafValue
+			var dafValue viewmodel.DafValue
 			err := readDaf(place, p.Addr, &dafValue)
 			if err == nil ||
 				merry.Is(err, comm.ErrProtocol) ||
@@ -300,26 +318,29 @@ func delay(what string, total time.Duration) error {
 	}
 }
 
-func onComport(entry comport.Entry) {
-	logrus.Debugln(entry)
-}
-
 var (
+	prodsMdl *viewmodel.DafProductsTable
+
 	portDaf = port{
-		Port: comport.NewPort("стенд", serial.Config{Baud: 9600}, onComport),
+		Port: comport.NewPort("стенд", serial.Config{Baud: 9600}, func(entry comport.Entry) {
+			logrus.Debugln(entry)
+		}),
 		Config: comm.Config{
 			ReadByteTimeoutMillis: 50,
 			ReadTimeoutMillis:     1000,
 			MaxAttemptsRead:       2,
 		},
 	}
+
 	portHart = port{
 		Port: comport.NewPort("hart", serial.Config{
 			Baud:        1200,
 			ReadTimeout: time.Millisecond,
 			Parity:      serial.ParityOdd,
 			StopBits:    serial.Stop1,
-		}, onComport),
+		}, func(entry comport.Entry) {
+			logrus.Debugln(entry)
+		}),
 		Config: comm.Config{
 			ReadByteTimeoutMillis: 50,
 			ReadTimeoutMillis:     2000,

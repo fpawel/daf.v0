@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"github.com/ansel1/merry"
 	"github.com/fpawel/daf/internal/data"
+	"github.com/fpawel/daf/internal/viewmodel"
 	"github.com/fpawel/elco/pkg/serial-comm/comport"
 	"github.com/fpawel/elco/pkg/serial-comm/modbus"
-	"github.com/hako/durafmt"
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
-	"github.com/sirupsen/logrus"
 	"log"
 	"time"
 )
@@ -71,22 +70,21 @@ func runMainWindow() error {
 		neCmd, neArg         *walk.NumberEdit
 		pbCancelWork         *walk.PushButton
 		lblWork, lblWorkTime *walk.Label
-
-		sbRun      *walk.SplitButton
-		gbCmd      *walk.GroupBox
-		mainWindow *walk.MainWindow
+		btnRun               *walk.SplitButton
+		gbCmd                *walk.GroupBox
+		mainWindow           *walk.MainWindow
 	)
 
-	lastPartyProductsModel.synchronize = func(f func()) {
+	prodsMdl = viewmodel.NewDafProductsTable(func(f func()) {
 		tblViewProducts.Synchronize(f)
-	}
+	})
 
 	showErr := func(title, text string) {
 		walk.MsgBox(mainWindow, title,
 			text, walk.MsgBoxIconError|walk.MsgBoxOK)
 	}
 
-	delayProgress := new(delayProgressHelp)
+	delayProgress := new(delayHelp)
 
 	guiShowDelay = delayProgress.Show
 	guiHideDelay = delayProgress.Hide
@@ -99,7 +97,7 @@ func runMainWindow() error {
 		workStarted = true
 		comportContext, cancelComport = context.WithCancel(context.Background())
 
-		sbRun.SetVisible(false)
+		btnRun.SetVisible(false)
 		gbCmd.SetVisible(false)
 
 		portDaf.PortName = cbComportDaf.Text()
@@ -116,11 +114,11 @@ func runMainWindow() error {
 			mainWindow.Synchronize(func() {
 				workStarted = false
 
-				sbRun.SetVisible(true)
 				gbCmd.SetVisible(true)
+				btnRun.SetVisible(true)
 
 				pbCancelWork.SetVisible(false)
-				lastPartyProductsModel.setInterrogatePlace(-1)
+				prodsMdl.SetInterrogatePlace(-1)
 				_ = lblWorkTime.SetText(time.Now().Format("15:04:05"))
 				if err != nil {
 					if merry.Is(err, context.Canceled) {
@@ -139,47 +137,6 @@ func runMainWindow() error {
 
 			})
 		}()
-	}
-
-	executeProductDialog := func() {
-		n := tblViewProducts.CurrentIndex()
-		if n < 0 || n >= len(lastPartyProductsModel.items) {
-			return
-		}
-		p := *lastPartyProductsModel.items[n].Product
-		cmd, err := runProductDialog(mainWindow, &p)
-		if err != nil {
-			showErr("Ошибка данных", err.Error())
-			return
-		}
-		if cmd != walk.DlgCmdOK {
-			return
-		}
-		if err := p.Save(); err != nil {
-			showErr("Ошибка данных", err.Error())
-			return
-		}
-		lastPartyProductsModel.items[n].Product = &p
-		lastPartyProductsModel.PublishRowChanged(n)
-	}
-
-	productColumns := make([]TableViewColumn, pcConnection+1)
-
-	{
-		x := productColumns
-		type t = TableViewColumn
-		x[pcAddr] = t{Title: "Адрес", Width: 80}
-		x[pcSerialNumber] = t{Title: "Номер", Width: 80}
-		x[pcProductID] = t{Title: "ID", Width: 80}
-		x[pcConcentration] = t{Title: "Концентрация", Width: 150, Precision: 3}
-		x[pcCurrent] = t{Title: "Ток", Width: 100, Precision: 1}
-		x[pcThreshold1] = t{Title: "Порог 1", Width: 120, Precision: 1}
-		x[pcThreshold2] = t{Title: "Порог 2", Width: 120, Precision: 1}
-		x[pcMode] = t{Title: "Режим"}
-		x[pcFailure] = t{Title: "Отказ"}
-		x[pcVersion] = t{Title: "Версия"}
-		x[pcGas] = t{Title: "Газ"}
-		x[pcConnection] = t{Title: "Связь"}
 	}
 
 	menuWorks := []MenuItem{
@@ -234,31 +191,56 @@ func runMainWindow() error {
 	}
 
 	if err := (MainWindow{
-		AssignTo:   &mainWindow,
-		Title:      "ЭН8800-6408 Партия ДАФ-М " + data.LastParty().String(),
+		AssignTo: &mainWindow,
+		Title: "ЭН8800-6408 Партия ДАФ-М " + (func() string {
+			p := data.GetLastParty()
+			return fmt.Sprintf("№%d %s", p.PartyID, p.CreatedAt.Format("02.01.2006"))
+		}()),
 		Name:       "MainWindow",
 		Font:       Font{PointSize: 12, Family: "Segoe UI"},
 		Background: SolidColorBrush{Color: walk.RGB(255, 255, 255)},
 		Size:       Size{800, 600},
 		Layout:     VBox{},
 
+		MenuItems: []MenuItem{
+
+			Menu{
+				Text: "Партия",
+				Items: []MenuItem{
+					Action{
+						Text: "Создать новую",
+						OnTriggered: func() {
+
+						},
+					},
+					Action{
+						Text: "Параметры",
+						OnTriggered: func() {
+							if err := runPartyDialog(mainWindow); err != nil {
+								panic(err)
+							}
+						},
+					},
+				},
+			},
+		},
+
 		Children: []Widget{
 			ScrollView{
 				VerticalFixed: true,
 				Layout:        HBox{},
 				Children: []Widget{
+					SplitButton{
+						Text:      "Управление",
+						AssignTo:  &btnRun,
+						MenuItems: menuWorks,
+					},
 					PushButton{
 						AssignTo: &pbCancelWork,
 						Text:     "Прервать",
 						OnClicked: func() {
 							cancelComport()
 						},
-					},
-
-					SplitButton{
-						Text:      "Управление",
-						AssignTo:  &sbRun,
-						MenuItems: menuWorks,
 					},
 
 					Label{
@@ -279,39 +261,42 @@ func runMainWindow() error {
 						NotSortableByHeaderClick: true,
 						LastColumnStretched:      true,
 						CheckBoxes:               true,
-						Model:                    lastPartyProductsModel,
-
-						Columns: productColumns,
-
-						ContextMenuItems: []MenuItem{
-							Action{
-								Text: "Создать новую партию",
-							},
-							Action{
-								Text: "Параметры партии",
-								OnTriggered: func() {
-									if err := runPartyDialog(mainWindow); err != nil {
-										panic(err)
-									}
-								},
-							},
-							Action{
-								Text: "Добавить прибор в партию",
-								Shortcut: Shortcut{
-									Key: walk.KeyInsert,
-								},
-								OnTriggered: func() {
-									lastPartyProductsModel.addNewProduct()
-								},
-							},
-							Action{
-								Text: "Удалить прибор из партии",
-							},
-							Action{
-								Text:        "Изменить адрес, номер прибора",
-								OnTriggered: executeProductDialog,
-							},
+						Model:                    prodsMdl,
+						OnItemActivated: func() {
+							n := tblViewProducts.CurrentIndex()
+							if n < 0 || n >= prodsMdl.RowCount() {
+								return
+							}
+							runProductDialog(mainWindow, prodsMdl.ProductAt(n))
+							prodsMdl.PublishRowChanged(n)
 						},
+						OnKeyDown: func(key walk.Key) {
+							switch key {
+
+							case walk.KeyInsert:
+								m := prodsMdl
+								if err := m.AddNewProduct(); err != nil {
+									showErr("Ошибка данных", err.Error())
+								}
+
+								runProductDialog(mainWindow, m.ProductAt(m.RowCount()-1))
+								prodsMdl.PublishRowChanged(m.RowCount() - 1)
+
+							case walk.KeyDelete:
+								n := tblViewProducts.CurrentIndex()
+								m := prodsMdl
+								if n < 0 || n >= m.RowCount() {
+									return
+								}
+								if err := data.DBProducts.Delete(m.ProductAt(n)); err != nil {
+									showErr("Ошибка данных", err.Error())
+								}
+								prodsMdl.Validate()
+							}
+
+						},
+
+						Columns: viewmodel.ProductColumns,
 					},
 					ScrollView{
 						HorizontalFixed: true,
@@ -363,142 +348,62 @@ func runMainWindow() error {
 	return nil
 }
 
-func runProductDialog(owner walk.Form, p *data.Product) (int, error) {
+func runProductDialog(owner walk.Form, p *data.Product) {
 	var (
-		edAddr, edSerial   *walk.NumberEdit
-		acceptPB, cancelPB *walk.PushButton
-		dlg                *walk.Dialog
+		edAddr, edSerial *walk.NumberEdit
+		dlg              *walk.Dialog
+		btn              *walk.PushButton
 	)
-	return Dialog{
-		Title:      fmt.Sprintf("ДАФ %d", p.ProductID),
-		Font:       Font{PointSize: 12, Family: "Segoe UI"},
-		Background: SolidColorBrush{Color: walk.RGB(255, 255, 255)},
-		MinSize:    Size{305, 265},
-		MaxSize:    Size{305, 265},
-		Layout:     VBox{},
-		AssignTo:   &dlg,
+	d := Dialog{
+		Title:         fmt.Sprintf("ДАФ %d", p.ProductID),
+		Font:          Font{PointSize: 12, Family: "Segoe UI"},
+		Background:    SolidColorBrush{Color: walk.RGB(255, 255, 255)},
+		Layout:        Grid{Columns: 2},
+		AssignTo:      &dlg,
+		DefaultButton: &btn,
+		CancelButton:  &btn,
 		Children: []Widget{
-			ScrollView{
-				HorizontalFixed: true,
-				Layout:          VBox{},
-				Children: []Widget{
-					Label{Text: "Адрес:"},
-					NumberEdit{
-						AssignTo: &edAddr,
-						Value:    float64(p.Addr),
-						MinValue: 1,
-						MaxValue: 127,
-						Decimals: 0,
-						OnValueChanged: func() {
-							p.Addr = modbus.Addr(edAddr.Value())
-						},
-					},
-					Label{Text: "Серийный номер:"},
-					NumberEdit{
-						AssignTo: &edSerial,
-						Value:    float64(p.Serial),
-						MinValue: 1,
-						MaxValue: 127,
-						Decimals: 0,
-						OnValueChanged: func() {
-							p.Serial = int64(edSerial.Value())
-						},
-					},
-
-					Composite{
-						Layout: HBox{},
-						Children: []Widget{
-							PushButton{
-								Text:     "Ок",
-								AssignTo: &acceptPB,
-								OnClicked: func() {
-									dlg.Accept()
-								},
-							},
-							PushButton{
-								Text:     "Отмена",
-								AssignTo: &cancelPB,
-								OnClicked: func() {
-									dlg.Cancel()
-								},
-							},
-						},
-					},
+			Label{Text: "Адрес:", TextAlignment: AlignFar},
+			NumberEdit{
+				AssignTo: &edAddr,
+				Value:    float64(p.Addr),
+				MinValue: 1,
+				MaxValue: 127,
+				Decimals: 0,
+				OnValueChanged: func() {
+					p.Addr = modbus.Addr(edAddr.Value())
+					if err := data.DBProducts.Save(p); err != nil {
+						walk.MsgBox(owner, "Ошибка данных",
+							err.Error(), walk.MsgBoxIconError|walk.MsgBoxOK)
+					}
 				},
 			},
-		},
-	}.Run(owner)
-}
-
-type delayProgressHelp struct {
-	*walk.Composite
-	pb     *walk.ProgressBar
-	lbl    *walk.Label
-	ticker *time.Ticker
-	done   chan struct{}
-}
-
-func (x *delayProgressHelp) Show(what string, total time.Duration) {
-	startMoment := time.Now()
-	x.done = make(chan struct{}, 1)
-	x.ticker = time.NewTicker(time.Millisecond * 500)
-	x.Composite.Synchronize(func() {
-		x.SetVisible(true)
-		x.pb.SetRange(0, int(total.Nanoseconds()/1000000))
-		x.pb.SetValue(0)
-		_ = x.lbl.SetText(fmt.Sprintf("%s: %s", what, durafmt.Parse(total)))
-	})
-	go func() {
-		defer func() {
-			logrus.Debugln("timer closed")
-		}()
-		for {
-			select {
-			case <-x.ticker.C:
-				x.Composite.Synchronize(func() {
-					x.pb.SetValue(int(time.Since(startMoment).Nanoseconds() / 1000000))
-				})
-			case <-x.done:
-				return
-			}
-		}
-	}()
-}
-
-func (x *delayProgressHelp) Hide() {
-	x.ticker.Stop()
-	close(x.done)
-	x.Composite.Synchronize(func() {
-		x.SetVisible(false)
-	})
-
-}
-
-func (x *delayProgressHelp) Widget() Widget {
-	return Composite{
-		AssignTo: &x.Composite,
-		Layout:   HBox{},
-		Visible:  false,
-		Children: []Widget{
-			Label{AssignTo: &x.lbl},
-			ScrollView{
-				Layout:        VBox{SpacingZero: true, MarginsZero: true},
-				VerticalFixed: true,
-				Children: []Widget{
-					ProgressBar{
-						AssignTo: &x.pb,
-						MaxSize:  Size{0, 15},
-						MinSize:  Size{0, 15},
-					},
+			Label{Text: "Серийный номер:", TextAlignment: AlignFar},
+			NumberEdit{
+				AssignTo: &edSerial,
+				Value:    float64(p.Serial),
+				MinValue: 1,
+				MaxValue: float64(0xFFFFFFFFFFFFFF),
+				Decimals: 0,
+				OnValueChanged: func() {
+					p.Serial = int64(edSerial.Value())
+					if err := data.DBProducts.Save(p); err != nil {
+						walk.MsgBox(owner, "Ошибка данных", err.Error(), walk.MsgBoxIconError|walk.MsgBoxOK)
+					}
 				},
 			},
-
+			Composite{},
 			PushButton{
-				Text: "Продолжить без задержки",
+				AssignTo: &btn,
+				Text:     "Закрыть",
 				OnClicked: func() {
-					skipDelay()
+					dlg.Accept()
 				},
 			},
 		},
 	}
+	if err := d.Create(owner); err != nil {
+		panic(err)
+	}
+	dlg.Run()
 }

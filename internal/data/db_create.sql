@@ -46,12 +46,22 @@ CREATE TABLE IF NOT EXISTS product_value
     current               REAL                NOT NULL,
     threshold1            BOOLEAN             NOT NULL,
     threshold2            BOOLEAN             NOT NULL,
+    UNIQUE (product_id, name),
+    FOREIGN KEY (product_id) REFERENCES product (product_id) ON DELETE CASCADE
+);
+
+
+CREATE TABLE IF NOT EXISTS product_entry
+(
+    product_entry_id INTEGER PRIMARY KEY NOT NULL,
+    product_id            INTEGER             NOT NULL,
+    created_at            TIMESTAMP           NOT NULL DEFAULT (datetime('now')) UNIQUE,
+    name                  TEXT                NOT NULL,
     ok                    BOOlEAN             NOT NULL,
     message               TEXT                NOT NULL,
     UNIQUE (product_id, name),
     FOREIGN KEY (product_id) REFERENCES product (product_id) ON DELETE CASCADE
 );
-
 
 CREATE VIEW IF NOT EXISTS last_party AS
 SELECT *

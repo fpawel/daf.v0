@@ -18,6 +18,4 @@ type ProductValue struct {
 	Current        float64   `reform:"current"`
 	Threshold1     bool      `reform:"threshold1"`
 	Threshold2     bool      `reform:"threshold2"`
-	Ok             bool      `reform:"ok"`
-	Message        string    `reform:"message"`
 }

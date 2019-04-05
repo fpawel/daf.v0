@@ -1,4 +1,4 @@
-package main
+package viewmodel
 
 import (
 	"fmt"
@@ -6,23 +6,24 @@ import (
 	"github.com/fpawel/daf/internal/data"
 	"github.com/fpawel/elco/pkg/serial-comm/modbus"
 	"github.com/lxn/walk"
+	"time"
 )
 
-type productsModel struct {
+type DafProductsTable struct {
 	walk.TableModelBase
 	synchronize      func(func())
-	items            []productModel
+	items            []DafProductViewModel
 	interrogatePlace int
 }
 
-type productModel struct {
+type DafProductViewModel struct {
 	*data.Product
-	Value6408  *Value6408
+	Value6408  *DafValue6408
 	Daf        *DafValue
 	connection *connectionInfo
 }
 
-type Value6408 struct {
+type DafValue6408 struct {
 	Current                float64
 	Threshold1, Threshold2 bool
 }
@@ -40,24 +41,7 @@ type connectionInfo struct {
 	text string
 }
 
-type ProductColumn int
-
-const (
-	pcAddr ProductColumn = iota
-	pcSerialNumber
-	pcProductID
-	pcConcentration
-	pcCurrent
-	pcMode
-	pcFailure
-	pcThreshold1
-	pcThreshold2
-	pcVersion
-	pcGas
-	pcConnection
-)
-
-func (x Value6408) String() string {
+func (x DafValue6408) String() string {
 	f := func(b bool) int {
 		if b {
 			return 1
@@ -73,7 +57,15 @@ func (x DafValue) String() string {
 		x.Concentration, x.Mode, x.Failure, x.Version, x.Threshold1, x.Threshold2)
 }
 
-func (m *productsModel) addNewProduct() {
+func NewDafProductsTable(synchronize func(func())) *DafProductsTable {
+	x := &DafProductsTable{
+		synchronize: synchronize,
+	}
+	x.Validate()
+	return x
+}
+
+func (m *DafProductsTable) AddNewProduct() error {
 	serial := int64(1)
 	addr := modbus.Addr(1)
 l1:
@@ -88,13 +80,20 @@ l1:
 		}
 	}
 
-	data.DBProducts.MustExec(
-		`INSERT INTO product (party_id, serial, addr, checked) VALUES ((SELECT party_id FROM last_party), ?, ?, 1)`,
-		serial, addr)
-	m.validate()
+	if err := data.DBProducts.Save(&data.Product{
+		PartyID:   data.GetLastPartyID(),
+		Addr:      addr,
+		Serial:    serial,
+		Checked:   true,
+		CreatedAt: time.Now(),
+	}); err != nil {
+		return err
+	}
+	m.Validate()
+	return nil
 }
 
-func (m *productsModel) setDafValue(place int, v DafValue) {
+func (m *DafProductsTable) SetDafValue(place int, v DafValue) {
 	m.items[place].Daf = &v
 	m.items[place].connection = &connectionInfo{true, v.String()}
 	m.synchronize(func() {
@@ -102,21 +101,21 @@ func (m *productsModel) setDafValue(place int, v DafValue) {
 	})
 }
 
-func (m *productsModel) set6408Value(place int, v Value6408) {
+func (m *DafProductsTable) Set6408Value(place int, v DafValue6408) {
 	m.items[place].Value6408 = &v
 	m.synchronize(func() {
 		m.PublishRowChanged(place)
 	})
 }
 
-func (m *productsModel) setProductConnection(place int, ok bool, text string) {
+func (m *DafProductsTable) SetProductConnection(place int, ok bool, text string) {
 	m.items[place].connection = &connectionInfo{ok, text}
 	m.synchronize(func() {
 		m.PublishRowChanged(place)
 	})
 }
 
-func (m *productsModel) setInterrogatePlace(place int) {
+func (m *DafProductsTable) SetInterrogatePlace(place int) {
 	if m.interrogatePlace == place {
 		return
 	}
@@ -126,53 +125,57 @@ func (m *productsModel) setInterrogatePlace(place int) {
 	})
 }
 
-func (m *productsModel) validate() {
+func (m *DafProductsTable) Validate() {
 	m.interrogatePlace = -1
 	m.items = nil
 	for _, p := range data.GetProductsOfLastParty() {
-		m.items = append(m.items, productModel{Product: p})
+		m.items = append(m.items, DafProductViewModel{Product: p})
 	}
 	m.PublishRowsReset()
 }
 
-func (m *productsModel) RowCount() int {
+func (m *DafProductsTable) RowCount() int {
 	return len(m.items)
 }
 
-func (m *productsModel) Value(row, col int) interface{} {
+func (m *DafProductsTable) ProductAt(n int) *data.Product {
+	return m.items[n].Product
+}
+
+func (m *DafProductsTable) Value(row, col int) interface{} {
 	x := m.items[row]
 
 	switch ProductColumn(col) {
-	case pcAddr:
+	case ProdColAddr:
 		return x.Addr
-	case pcSerialNumber:
+	case ProdColSerialNumber:
 		return x.Serial
-	case pcProductID:
+	case ProdColProductID:
 		return x.ProductID
-	case pcConnection:
+	case ProdColConnection:
 		if x.connection != nil {
 			return x.connection.text
 		}
-	case pcCurrent:
+	case ProdColCurrent:
 		if x.Value6408 != nil {
 			return x.Value6408.Current
 		}
 	default:
 		if x.Daf != nil {
 			switch ProductColumn(col) {
-			case pcConcentration:
+			case ProdColConcentration:
 				return x.Daf.Concentration
-			case pcThreshold1:
+			case ProdColThreshold1:
 				return x.Daf.Threshold1
-			case pcThreshold2:
+			case ProdColThreshold2:
 				return x.Daf.Threshold2
-			case pcMode:
+			case ProdColMode:
 				return x.Daf.Mode
-			case pcFailure:
+			case ProdColFailure:
 				return int(x.Daf.Failure)
-			case pcVersion:
+			case ProdColVersion:
 				return fmt.Sprintf("%v.%X", x.Daf.Version, int(x.Daf.VersionID))
-			case pcGas:
+			case ProdColGas:
 				return int(x.Daf.Gas)
 			}
 		}
@@ -180,7 +183,7 @@ func (m *productsModel) Value(row, col int) interface{} {
 	return ""
 }
 
-func (m *productsModel) StyleCell(style *walk.CellStyle) {
+func (m *DafProductsTable) StyleCell(style *walk.CellStyle) {
 
 	if style.Row() == m.interrogatePlace {
 		style.BackgroundColor = walk.RGB(166, 202, 240)
@@ -188,11 +191,11 @@ func (m *productsModel) StyleCell(style *walk.CellStyle) {
 
 	p := m.items[style.Row()]
 	switch ProductColumn(style.Col()) {
-	case pcAddr:
+	case ProdColAddr:
 		if style.Row() == m.interrogatePlace {
 			style.Image = assets.ImgForward
 		}
-	case pcThreshold1:
+	case ProdColThreshold1:
 		if p.Value6408 != nil {
 			if p.Value6408.Threshold1 {
 				style.Image = assets.ImgPinOn
@@ -201,7 +204,7 @@ func (m *productsModel) StyleCell(style *walk.CellStyle) {
 			}
 		}
 
-	case pcThreshold2:
+	case ProdColThreshold2:
 		if p.Value6408 != nil {
 			if p.Value6408.Threshold2 {
 				style.Image = assets.ImgPinOn
@@ -209,7 +212,7 @@ func (m *productsModel) StyleCell(style *walk.CellStyle) {
 				style.Image = assets.ImgPinOff
 			}
 		}
-	case pcConnection:
+	case ProdColConnection:
 
 		if p.connection != nil {
 			if p.connection.ok {
@@ -224,20 +227,12 @@ func (m *productsModel) StyleCell(style *walk.CellStyle) {
 	}
 }
 
-func (m *productsModel) Checked(index int) bool {
+func (m *DafProductsTable) Checked(index int) bool {
 	return m.items[index].Checked
 }
 
-func (m *productsModel) SetChecked(index int, checked bool) error {
+func (m *DafProductsTable) SetChecked(index int, checked bool) error {
 	m.items[index].Checked = checked
 	_, err := data.DBProducts.Exec(`UPDATE product SET checked = ? WHERE product_id = ?`, checked, m.items[index].ProductID)
 	return err
-}
-
-var (
-	lastPartyProductsModel = &productsModel{}
-)
-
-func init() {
-	lastPartyProductsModel.validate()
 }

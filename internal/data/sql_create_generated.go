@@ -38,19 +38,23 @@ CREATE TABLE IF NOT EXISTS product
     FOREIGN KEY (party_id) REFERENCES party (party_id) ON DELETE CASCADE
 );
 
-
 CREATE TABLE IF NOT EXISTS product_value
 (
-    product_id    INTEGER NOT NULL,
-    tex           BOOLEAN NOT NULL CHECK ( tex IN (0, 1) ),
-    gas           INTEGER NOT NULL CHECK ( tex IN (1, 2, 3, 4) ),
-    concentration REAL    NOT NULL,
-    current       REAL    NOT NULL,
-    threshold1    BOOLEAN NOT NULL,
-    threshold2    BOOLEAN NOT NULL,
-    UNIQUE (product_id, gas, tex),
+    product_value_id INTEGER PRIMARY KEY NOT NULL,
+    product_id            INTEGER             NOT NULL,
+    created_at            TIMESTAMP           NOT NULL DEFAULT (datetime('now')) UNIQUE,
+    gas                   INTEGER             NOT NULL CHECK ( gas IN (1, 2, 3, 4) ),
+    name                  TEXT                NOT NULL,
+    concentration         REAL                NOT NULL,
+    current               REAL                NOT NULL,
+    threshold1            BOOLEAN             NOT NULL,
+    threshold2            BOOLEAN             NOT NULL,
+    ok                    BOOlEAN             NOT NULL,
+    message               TEXT                NOT NULL,
+    UNIQUE (product_id, name),
     FOREIGN KEY (product_id) REFERENCES product (product_id) ON DELETE CASCADE
 );
+
 
 CREATE VIEW IF NOT EXISTS last_party AS
 SELECT *
