@@ -64,25 +64,6 @@ func setupCurrents() error {
 	return nil
 }
 
-func sleep(t time.Duration) {
-	timer := time.NewTimer(t)
-	defer func() {
-		if !timer.Stop() {
-			<-timer.C
-		}
-	}()
-	for {
-		select {
-		case <-timer.C:
-			return
-		case <-comportContext.Done():
-			return
-		default:
-			time.Sleep(time.Millisecond)
-		}
-	}
-}
-
 func interrogateProducts() error {
 	for {
 		products := data.GetProductsOfLastParty()
@@ -225,12 +206,12 @@ func sendCmdPlace(place int, addr modbus.Addr, cmd modbus.DevCmd, arg float64) e
 	return err
 }
 
-func blowGas(gas data.Gas) error {
-	if err := switchGas(gas); err != nil {
-		return err
-	}
-	return delay(fmt.Sprintf("продувка ПГС%d", gas), 5*time.Minute)
-}
+//func blowGas(gas data.Gas) error {
+//	if err := switchGas(gas); err != nil {
+//		return err
+//	}
+//	return delay(fmt.Sprintf("продувка ПГС%d", gas), 5*time.Minute)
+//}
 
 func switchGas(gas data.Gas) error {
 
@@ -270,6 +251,19 @@ func (x port) GetResponse(request []byte, prs comm.ResponseParser) ([]byte, erro
 		return nil, err
 	}
 	return x.Port.GetResponse(request, x.Config, comportContext, prs)
+}
+
+func sleep(t time.Duration) {
+	timer := time.NewTimer(t)
+	defer timer.Stop()
+	for {
+		select {
+		case <-timer.C:
+			return
+		case <-comportContext.Done():
+			return
+		}
+	}
 }
 
 func delay(what string, total time.Duration) error {
@@ -319,7 +313,8 @@ func delay(what string, total time.Duration) error {
 }
 
 var (
-	prodsMdl *viewmodel.DafProductsTable
+	prodsMdl      *viewmodel.DafProductsTable
+	prodValuesMdl *viewmodel.DafProductValuesTable
 
 	portDaf = port{
 		Port: comport.NewPort("стенд", serial.Config{Baud: 9600}, func(entry comport.Entry) {

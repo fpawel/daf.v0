@@ -1,5 +1,6 @@
 PRAGMA foreign_keys = ON;
 PRAGMA encoding = 'UTF-8';
+-- %MYAPPDATA%\daf\daf.sqlite
 
 CREATE TABLE IF NOT EXISTS party
 (
@@ -38,15 +39,16 @@ CREATE TABLE IF NOT EXISTS product
 CREATE TABLE IF NOT EXISTS product_value
 (
     product_value_id INTEGER PRIMARY KEY NOT NULL,
-    product_id            INTEGER             NOT NULL,
-    created_at            TIMESTAMP           NOT NULL DEFAULT (datetime('now')) UNIQUE,
-    gas                   INTEGER             NOT NULL CHECK ( gas IN (1, 2, 3, 4) ),
-    name                  TEXT                NOT NULL,
-    concentration         REAL                NOT NULL,
-    current               REAL                NOT NULL,
-    threshold1            BOOLEAN             NOT NULL,
-    threshold2            BOOLEAN             NOT NULL,
-    UNIQUE (product_id, name),
+    product_id       INTEGER             NOT NULL,
+    created_at       TIMESTAMP           NOT NULL DEFAULT (datetime('now')),
+    work_index       INTEGER             NOT NULL CHECK ( work_index >= 0),
+    gas              INTEGER             NOT NULL CHECK ( gas IN (1, 2, 3, 4) ),
+    name             TEXT                NOT NULL,
+    concentration    REAL                NOT NULL,
+    current          REAL                NOT NULL,
+    threshold1       BOOLEAN             NOT NULL,
+    threshold2       BOOLEAN             NOT NULL,
+    UNIQUE (product_id, name, work_index),
     FOREIGN KEY (product_id) REFERENCES product (product_id) ON DELETE CASCADE
 );
 
@@ -54,11 +56,11 @@ CREATE TABLE IF NOT EXISTS product_value
 CREATE TABLE IF NOT EXISTS product_entry
 (
     product_entry_id INTEGER PRIMARY KEY NOT NULL,
-    product_id            INTEGER             NOT NULL,
-    created_at            TIMESTAMP           NOT NULL DEFAULT (datetime('now')) UNIQUE,
-    name                  TEXT                NOT NULL,
-    ok                    BOOlEAN             NOT NULL,
-    message               TEXT                NOT NULL,
+    product_id       INTEGER             NOT NULL,
+    created_at       TIMESTAMP           NOT NULL DEFAULT (datetime('now')) UNIQUE,
+    name             TEXT                NOT NULL,
+    ok               BOOlEAN             NOT NULL,
+    message          TEXT                NOT NULL,
     UNIQUE (product_id, name),
     FOREIGN KEY (product_id) REFERENCES product (product_id) ON DELETE CASCADE
 );

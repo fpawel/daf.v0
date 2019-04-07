@@ -6,12 +6,15 @@ import (
 	"github.com/fpawel/daf/internal/data"
 	"github.com/fpawel/elco/pkg/serial-comm/modbus"
 	"github.com/lxn/walk"
+	. "github.com/lxn/walk/declarative"
 	"time"
 )
 
+type synchronizeFunc = func(func())
+
 type DafProductsTable struct {
 	walk.TableModelBase
-	synchronize      func(func())
+	synchronize      synchronizeFunc
 	items            []DafProductViewModel
 	interrogatePlace int
 }
@@ -57,15 +60,13 @@ func (x DafValue) String() string {
 		x.Concentration, x.Mode, x.Failure, x.Version, x.Threshold1, x.Threshold2)
 }
 
-func NewDafProductsTable(synchronize func(func())) *DafProductsTable {
-	x := &DafProductsTable{
+func NewDafProductsTable(synchronize synchronizeFunc) *DafProductsTable {
+	return &DafProductsTable{
 		synchronize: synchronize,
 	}
-	x.Validate()
-	return x
 }
 
-func (m *DafProductsTable) AddNewProduct() error {
+func (m *DafProductsTable) AddNewProduct() {
 	serial := int64(1)
 	addr := modbus.Addr(1)
 l1:
@@ -87,10 +88,9 @@ l1:
 		Checked:   true,
 		CreatedAt: time.Now(),
 	}); err != nil {
-		return err
+		panic(err)
 	}
 	m.Validate()
-	return nil
 }
 
 func (m *DafProductsTable) SetDafValue(place int, v DafValue) {
@@ -119,9 +119,11 @@ func (m *DafProductsTable) SetInterrogatePlace(place int) {
 	if m.interrogatePlace == place {
 		return
 	}
+	n := m.interrogatePlace
 	m.interrogatePlace = place
 	m.synchronize(func() {
-		m.PublishRowsReset()
+		m.PublishRowChanged(n)
+		m.PublishRowChanged(place)
 	})
 }
 
@@ -131,7 +133,9 @@ func (m *DafProductsTable) Validate() {
 	for _, p := range data.GetProductsOfLastParty() {
 		m.items = append(m.items, DafProductViewModel{Product: p})
 	}
-	m.PublishRowsReset()
+	m.synchronize(func() {
+		m.PublishRowsReset()
+	})
 }
 
 func (m *DafProductsTable) RowCount() int {
@@ -236,3 +240,52 @@ func (m *DafProductsTable) SetChecked(index int, checked bool) error {
 	_, err := data.DBProducts.Exec(`UPDATE product SET checked = ? WHERE product_id = ?`, checked, m.items[index].ProductID)
 	return err
 }
+
+type ProductColumn int
+
+const (
+	ProdColAddr ProductColumn = iota
+	ProdColSerialNumber
+	ProdColProductID
+	ProdColConcentration
+	ProdColCurrent
+	ProdColMode
+	ProdColFailure
+	ProdColThreshold1
+	ProdColThreshold2
+	ProdColVersion
+	ProdColGas
+	ProdColConnection
+)
+
+var ProductColumns = func() []TableViewColumn {
+	x := make([]TableViewColumn, ProdColConnection+1)
+
+	type t = TableViewColumn
+	x[ProdColAddr] =
+		t{Title: "Адрес", Width: 80}
+	x[ProdColSerialNumber] =
+		t{Title: "Номер", Width: 80}
+	x[ProdColProductID] =
+		t{Title: "ID", Width: 80}
+	x[ProdColConcentration] =
+		t{Title: "Концентрация", Width: 150, Precision: 3}
+	x[ProdColCurrent] =
+		t{Title: "Ток", Width: 100, Precision: 1}
+	x[ProdColThreshold1] =
+		t{Title: "Порог 1", Width: 120, Precision: 1}
+	x[ProdColThreshold2] =
+		t{Title: "Порог 2", Width: 120, Precision: 1}
+	x[ProdColMode] =
+		t{Title: "Режим"}
+	x[ProdColFailure] =
+		t{Title: "Отказ"}
+	x[ProdColVersion] =
+		t{Title: "Версия"}
+	x[ProdColGas] =
+		t{Title: "Газ"}
+	x[ProdColConnection] =
+		t{Title: "Связь"}
+
+	return x
+}()

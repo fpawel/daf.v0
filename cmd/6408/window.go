@@ -11,6 +11,7 @@ import (
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 	"log"
+	"math"
 	"time"
 )
 
@@ -65,7 +66,8 @@ func runMainWindow() error {
 	var (
 		cbComportDaf,
 		cbComportHart *walk.ComboBox
-		tblViewProducts *walk.TableView
+		tblViewProducts      *walk.TableView
+		tblViewProductValues *walk.TableView
 
 		neCmd, neArg         *walk.NumberEdit
 		pbCancelWork         *walk.PushButton
@@ -77,6 +79,10 @@ func runMainWindow() error {
 
 	prodsMdl = viewmodel.NewDafProductsTable(func(f func()) {
 		tblViewProducts.Synchronize(f)
+	})
+
+	prodValuesMdl = viewmodel.NewDafProductValuesTable(func(f func()) {
+		tblViewProductValues.Synchronize(f)
 	})
 
 	showErr := func(title, text string) {
@@ -202,34 +208,37 @@ func runMainWindow() error {
 		Size:       Size{800, 600},
 		Layout:     VBox{},
 
-		MenuItems: []MenuItem{
-
-			Menu{
-				Text: "Партия",
-				Items: []MenuItem{
-					Action{
-						Text: "Создать новую",
-						OnTriggered: func() {
-
-						},
-					},
-					Action{
-						Text: "Параметры",
-						OnTriggered: func() {
-							if err := runPartyDialog(mainWindow); err != nil {
-								panic(err)
-							}
-						},
-					},
-				},
-			},
-		},
-
 		Children: []Widget{
 			ScrollView{
 				VerticalFixed: true,
 				Layout:        HBox{},
 				Children: []Widget{
+					SplitButton{
+						Text: "Партия",
+						MenuItems: []MenuItem{
+							Action{
+								Text: "Создать новую",
+								OnTriggered: func() {
+
+								},
+							},
+							Action{
+								Text: "Параметры",
+								OnTriggered: func() {
+									runPartyDialog(mainWindow)
+								},
+							},
+							Action{
+								Text: "Добавить прибор в партию",
+								Shortcut: Shortcut{
+									Key: walk.KeyInsert,
+								},
+								OnTriggered: func() {
+									prodsMdl.AddNewProduct()
+								},
+							},
+						},
+					},
 					SplitButton{
 						Text:      "Управление",
 						AssignTo:  &btnRun,
@@ -275,10 +284,7 @@ func runMainWindow() error {
 
 							case walk.KeyInsert:
 								m := prodsMdl
-								if err := m.AddNewProduct(); err != nil {
-									showErr("Ошибка данных", err.Error())
-								}
-
+								m.AddNewProduct()
 								runProductDialog(mainWindow, m.ProductAt(m.RowCount()-1))
 								prodsMdl.PublishRowChanged(m.RowCount() - 1)
 
@@ -293,6 +299,18 @@ func runMainWindow() error {
 								}
 								prodsMdl.Validate()
 							}
+
+						},
+						OnCurrentIndexChanged: func() {
+							n := tblViewProducts.CurrentIndex()
+							if n > -1 && n < prodsMdl.RowCount() {
+								prodValuesMdl.SetProduct(prodsMdl.ProductAt(n).ProductID)
+								if prodValuesMdl.RowCount() > 0 {
+									tblViewProductValues.SetVisible(true)
+									return
+								}
+							}
+							tblViewProductValues.SetVisible(false)
 
 						},
 
@@ -318,7 +336,11 @@ func runMainWindow() error {
 								Title:    "Команда:",
 								Children: []Widget{
 									Label{Text: "Код:"},
-									NumberEdit{AssignTo: &neCmd},
+									NumberEdit{
+										AssignTo: &neCmd,
+										MinValue: 1,
+										MaxValue: math.MaxFloat64,
+									},
 									Label{Text: "Аргумент:"},
 									NumberEdit{AssignTo: &neArg, Decimals: 2, MinSize: Size{80, 0}},
 									PushButton{Text: "Выполнить", OnClicked: func() {
@@ -334,12 +356,20 @@ func runMainWindow() error {
 					},
 				},
 			},
+			TableView{
+				AssignTo:                 &tblViewProductValues,
+				NotSortableByHeaderClick: true,
+				LastColumnStretched:      true,
+				Model:                    prodValuesMdl,
+				Columns:                  viewmodel.ProductValueColumns,
+			},
 		},
 	}).Create(); err != nil {
 		return err
 	}
 
 	pbCancelWork.SetVisible(false)
+	prodsMdl.Validate()
 	mainWindow.Run()
 
 	if err := settings.Save(); err != nil {
@@ -353,7 +383,36 @@ func runProductDialog(owner walk.Form, p *data.Product) {
 		edAddr, edSerial *walk.NumberEdit
 		dlg              *walk.Dialog
 		btn              *walk.PushButton
+		lblError         *walk.Label
+		saveOnEdit       = false
 	)
+
+	save := func(what string) {
+		if !saveOnEdit {
+			return
+		}
+		p.Serial = int64(edSerial.Value())
+		p.Addr = modbus.Addr(edAddr.Value())
+		_ = lblError.SetText("")
+		if err := data.DBProducts.Save(p); err != nil {
+			_ = lblError.SetText(fmt.Sprintf("%s: дублирование значения: %v", what, err))
+			if err := data.DBProducts.FindByPrimaryKeyTo(p, p.ProductID); err != nil {
+				panic(err)
+			}
+		}
+		if edSerial.Value() != float64(p.Serial) {
+			edSerial.SetTextColor(0xFF)
+		} else {
+			edSerial.SetTextColor(0)
+		}
+
+		if edAddr.Value() != float64(p.Addr) {
+			edAddr.SetTextColor(0xFF)
+		} else {
+			edAddr.SetTextColor(0)
+		}
+
+	}
 	d := Dialog{
 		Title:         fmt.Sprintf("ДАФ %d", p.ProductID),
 		Font:          Font{PointSize: 12, Family: "Segoe UI"},
@@ -371,11 +430,7 @@ func runProductDialog(owner walk.Form, p *data.Product) {
 				MaxValue: 127,
 				Decimals: 0,
 				OnValueChanged: func() {
-					p.Addr = modbus.Addr(edAddr.Value())
-					if err := data.DBProducts.Save(p); err != nil {
-						walk.MsgBox(owner, "Ошибка данных",
-							err.Error(), walk.MsgBoxIconError|walk.MsgBoxOK)
-					}
+					save(fmt.Sprintf("адрес: %v", edAddr.Value()))
 				},
 			},
 			Label{Text: "Серийный номер:", TextAlignment: AlignFar},
@@ -383,13 +438,10 @@ func runProductDialog(owner walk.Form, p *data.Product) {
 				AssignTo: &edSerial,
 				Value:    float64(p.Serial),
 				MinValue: 1,
-				MaxValue: float64(0xFFFFFFFFFFFFFF),
+				MaxValue: math.MaxFloat64,
 				Decimals: 0,
 				OnValueChanged: func() {
-					p.Serial = int64(edSerial.Value())
-					if err := data.DBProducts.Save(p); err != nil {
-						walk.MsgBox(owner, "Ошибка данных", err.Error(), walk.MsgBoxIconError|walk.MsgBoxOK)
-					}
+					save(fmt.Sprintf("cерийный номер: %v", edSerial.Value()))
 				},
 			},
 			Composite{},
@@ -400,10 +452,17 @@ func runProductDialog(owner walk.Form, p *data.Product) {
 					dlg.Accept()
 				},
 			},
+			Label{
+				ColumnSpan: 2,
+				AssignTo:   &lblError,
+				TextColor:  0xFF,
+			},
 		},
 	}
 	if err := d.Create(owner); err != nil {
-		panic(err)
+		walk.MsgBox(owner, fmt.Sprintf("ДАФ %d", p.ProductID), err.Error(), walk.MsgBoxIconError|walk.MsgBoxOK)
+		return
 	}
+	saveOnEdit = true
 	dlg.Run()
 }

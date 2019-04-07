@@ -12,6 +12,7 @@ type ProductValue struct {
 	ProductValueID int64     `reform:"product_value_id,pk"`
 	ProductID      int64     `reform:"product_id"`
 	CreatedAt      time.Time `reform:"created_at"`
+	WorkIndex      int       `reform:"work_index"`
 	Gas            Gas       `reform:"gas"`
 	Name           string    `reform:"name"`
 	Concentration  float64   `reform:"concentration"`

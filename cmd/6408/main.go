@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/fpawel/daf/internal/assets"
 	"github.com/sirupsen/logrus"
+	_ "runtime/cgo"
 )
 
 func main() {
