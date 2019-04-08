@@ -15,51 +15,60 @@ import (
 	"time"
 )
 
-const (
-	WorkSetupCurrent = "настройка токового выхода"
-)
+func performWork(workName string, work func() error) error {
+	data.ClearCurrentProductsWorkResult(workName)
+	if err := work(); err != nil {
+		for _, p := range prodsMdl.CheckedProducts() {
+			data.SetProductWorkError(p.ProductID, workName, err)
+		}
+		return err
+	}
+
+	for _, p := range prodsMdl.CheckedProducts() {
+		if p.Connection != nil {
+			data.SetProductEntry(p.ProductID, workName, p.Connection.Ok, p.Connection.Text)
+		}
+	}
+	return nil
+}
 
 func setupCurrents() error {
-	data.ClearCurrentProductsWorkResult(WorkSetupCurrent)
-	defer func() {
 
-	}()
-
-	for place, p := range prodsMdl.OkProducts() {
-		if err := sendCmdPlace(place, p.Addr, 0xB, 1); err != nil && !IsDeviceError(err) {
-			return err
+	return performWork("настройка токового выхода", func() error {
+		for place, p := range prodsMdl.OkProducts() {
+			if err := sendCmdPlace(place, p.Addr, 0xB, 1); err != nil && !IsDeviceError(err) {
+				return err
+			}
 		}
-	}
 
-	sleep(5 * time.Second)
+		sleep(5 * time.Second)
 
-	for place, p := range data.GetProductsOfLastParty() {
-		v, err := read6408(place, p.Addr)
-		if err != nil {
-			return err
+		for place, p := range data.GetProductsOfLastParty() {
+			v, err := read6408(place, p.Addr)
+			if err != nil {
+				return err
+			}
+			if err = sendCmdPlace(place, p.Addr, 9, v.Current); err != nil && !IsDeviceError(err) {
+				return err
+			}
+			if err = sendCmdPlace(place, p.Addr, 0xC, 1); err != nil && !IsDeviceError(err) {
+				return err
+			}
 		}
-		if err = sendCmdPlace(place, p.Addr, 9, v.Current); err != nil && !IsDeviceError(err) {
-			return err
-		}
-		if err = sendCmdPlace(place, p.Addr, 0xC, 1); err != nil && !IsDeviceError(err) {
-			return err
-		}
-	}
 
-	sleep(5 * time.Second)
+		sleep(5 * time.Second)
 
-	for place, p := range prodsMdl.OkProducts() {
-		v, err := read6408(place, p.Addr)
-		if err != nil {
-			return err
+		for place, p := range prodsMdl.OkProducts() {
+			v, err := read6408(place, p.Addr)
+			if err != nil {
+				return err
+			}
+			if err := sendCmdPlace(place, p.Addr, 0xA, v.Current); err != nil && !IsDeviceError(err) {
+				return err
+			}
 		}
-		if err := sendCmdPlace(place, p.Addr, 0xA, v.Current); err != nil && !IsDeviceError(err) {
-			return err
-		}
-		data.SetProductWorkInfo(p.ProductID, WorkSetupCurrent, "выполнено")
-	}
-
-	return nil
+		return nil
+	})
 }
 
 func interrogateProducts() error {

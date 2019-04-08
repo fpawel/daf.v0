@@ -32,7 +32,6 @@ CREATE TABLE IF NOT EXISTS product
     created_at TIMESTAMP           NOT NULL DEFAULT (datetime('now')) UNIQUE,
     serial     INTEGER             NOT NULL CHECK (serial > 0 ),
     addr       SMALLINT            NOT NULL CHECK (addr > 0),
-    checked    BOOLEAN             NOT NULL DEFAULT FALSE,
 
     UNIQUE (party_id, addr),
     UNIQUE (party_id, serial),
@@ -60,7 +59,7 @@ CREATE TABLE IF NOT EXISTS product_entry
 (
     product_entry_id INTEGER PRIMARY KEY NOT NULL,
     product_id       INTEGER             NOT NULL,
-    created_at       TIMESTAMP           NOT NULL DEFAULT (datetime('now')) UNIQUE,
+    created_at       TIMESTAMP           NOT NULL DEFAULT (datetime('now')),
     name             TEXT                NOT NULL,
     ok               BOOlEAN             NOT NULL,
     message          TEXT                NOT NULL,

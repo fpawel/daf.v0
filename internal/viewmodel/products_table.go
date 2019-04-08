@@ -82,6 +82,15 @@ func (m *DafProductsTable) Products() (result []*DafProductViewModel) {
 	return
 }
 
+func (m *DafProductsTable) CheckedProducts() (result []*DafProductViewModel) {
+	for _, p := range m.items {
+		if p.Checked {
+			result = append(result, p)
+		}
+	}
+	return
+}
+
 func (m *DafProductsTable) OkProducts() (result []*DafProductViewModel) {
 	for _, p := range m.items {
 		if p.Checked && (p.Connection == nil || p.Connection.Ok) {
