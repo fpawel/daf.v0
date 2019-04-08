@@ -3,6 +3,7 @@ package data
 import (
 	"database/sql"
 	"github.com/fpawel/elco/pkg/winapp"
+	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"gopkg.in/reform.v1"
 	"gopkg.in/reform.v1/dialects/sqlite3"
@@ -68,15 +69,6 @@ func GetProductsByPartyID(partyID int64) (products []*Product) {
 	return
 }
 
-func HasCheckedProducts(products []*Product) bool {
-	for _, p := range products {
-		if p.Checked {
-			return true
-		}
-	}
-	return false
-}
-
 func CreateNewParty() int64 {
 	r, err := DBProducts.Exec(`INSERT INTO party DEFAULT VALUES`)
 	if err != nil {
@@ -89,9 +81,44 @@ func CreateNewParty() int64 {
 	return partyID
 }
 
+func GetProductEntry(productID int64, workName string) (ent *ProductEntry) {
+	ent = new(ProductEntry)
+	err := DBProducts.SelectOneTo(ent, "WHERE product_id = ? AND name = ?", workName)
+	if err != reform.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+func ClearCurrentProductsWorkResult(workName string) {
+	DBxProducts.MustExec(`
+DELETE FROM product_entry
+WHERE name = ? 
+AND product_id IN ( 
+	SELECT product_id 
+	FROM product 
+	WHERE party_id = (SELECT party_id FROM last_party))`, workName)
+}
+
+func SetProductWorkInfo(productID int64, workName, message string) {
+	SetProductEntry(productID, workName, true, message)
+}
+func SetProductWorkError(productID int64, workName string, err error) {
+	SetProductEntry(productID, workName, false, err.Error())
+}
+
+func SetProductEntry(productID int64, workName string, ok bool, message string) {
+	DBxProducts.MustExec(`
+INSERT OR REPLACE INTO product_entry (product_id, name, ok, message)
+VALUES (?, ?, ?, ?)`, productID, workName, ok, message)
+}
+
 var (
-	//DBxProducts *sqlx.DB
-	DBProducts *reform.DB
+	DBxProducts *sqlx.DB
+	DBProducts  *reform.DB
 )
 
 func init() {
@@ -119,6 +146,6 @@ func init() {
 		panic(err)
 	}
 
-	//DBxProducts = sqlx.NewDb(conn, "sqlite3")
+	DBxProducts = sqlx.NewDb(conn, "sqlite3")
 	DBProducts = reform.NewDB(conn, sqlite3.Dialect, nil)
 }

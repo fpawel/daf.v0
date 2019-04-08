@@ -15,5 +15,4 @@ type Product struct {
 	CreatedAt time.Time   `reform:"created_at"`
 	Serial    int64       `reform:"serial"`
 	Addr      modbus.Addr `reform:"addr"`
-	Checked   bool        `reform:"checked"`
 }

@@ -15,7 +15,7 @@ type synchronizeFunc = func(func())
 type DafProductsTable struct {
 	walk.TableModelBase
 	synchronize      synchronizeFunc
-	items            []DafProductViewModel
+	items            []*DafProductViewModel
 	interrogatePlace int
 }
 
@@ -23,7 +23,9 @@ type DafProductViewModel struct {
 	*data.Product
 	Value6408  *DafValue6408
 	Daf        *DafValue
-	connection *connectionInfo
+	Connection *Connection
+	Place      int
+	Checked    bool
 }
 
 type DafValue6408 struct {
@@ -39,9 +41,9 @@ type DafValue struct {
 	Mode uint16
 }
 
-type connectionInfo struct {
-	ok   bool
-	text string
+type Connection struct {
+	Ok   bool
+	Text string
 }
 
 func (x DafValue6408) String() string {
@@ -66,6 +68,29 @@ func NewDafProductsTable(synchronize synchronizeFunc) *DafProductsTable {
 	}
 }
 
+func (m *DafProductsTable) ClearConnectionsInfo() {
+	for i := range m.items {
+		m.items[i].Connection = nil
+	}
+	m.PublishRowsReset()
+}
+
+func (m *DafProductsTable) Products() (result []*DafProductViewModel) {
+	for _, p := range m.items {
+		result = append(result, p)
+	}
+	return
+}
+
+func (m *DafProductsTable) OkProducts() (result []*DafProductViewModel) {
+	for _, p := range m.items {
+		if p.Checked && (p.Connection == nil || p.Connection.Ok) {
+			result = append(result, p)
+		}
+	}
+	return
+}
+
 func (m *DafProductsTable) AddNewProduct() {
 	serial := int64(1)
 	addr := modbus.Addr(1)
@@ -85,7 +110,6 @@ l1:
 		PartyID:   data.GetLastPartyID(),
 		Addr:      addr,
 		Serial:    serial,
-		Checked:   true,
 		CreatedAt: time.Now(),
 	}); err != nil {
 		panic(err)
@@ -95,7 +119,7 @@ l1:
 
 func (m *DafProductsTable) SetDafValue(place int, v DafValue) {
 	m.items[place].Daf = &v
-	m.items[place].connection = &connectionInfo{true, v.String()}
+	m.items[place].Connection = &Connection{true, v.String()}
 	m.synchronize(func() {
 		m.PublishRowChanged(place)
 	})
@@ -108,8 +132,15 @@ func (m *DafProductsTable) Set6408Value(place int, v DafValue6408) {
 	})
 }
 
-func (m *DafProductsTable) SetProductConnection(place int, ok bool, text string) {
-	m.items[place].connection = &connectionInfo{ok, text}
+func (m *DafProductsTable) SetConnectionOkAt(place int) {
+	m.items[place].Connection = &Connection{true, "связь установлена"}
+	m.synchronize(func() {
+		m.PublishRowChanged(place)
+	})
+}
+
+func (m *DafProductsTable) SetConnectionErrorAt(place int, err error) {
+	m.items[place].Connection = &Connection{false, err.Error()}
 	m.synchronize(func() {
 		m.PublishRowChanged(place)
 	})
@@ -130,8 +161,12 @@ func (m *DafProductsTable) SetInterrogatePlace(place int) {
 func (m *DafProductsTable) Validate() {
 	m.interrogatePlace = -1
 	m.items = nil
-	for _, p := range data.GetProductsOfLastParty() {
-		m.items = append(m.items, DafProductViewModel{Product: p})
+	for place, p := range data.GetProductsOfLastParty() {
+		m.items = append(m.items, &DafProductViewModel{
+			Product: p,
+			Place:   place,
+			Checked: true,
+		})
 	}
 	m.synchronize(func() {
 		m.PublishRowsReset()
@@ -157,8 +192,9 @@ func (m *DafProductsTable) Value(row, col int) interface{} {
 	case ProdColProductID:
 		return x.ProductID
 	case ProdColConnection:
-		if x.connection != nil {
-			return x.connection.text
+
+		if x.Connection != nil {
+			return x.Connection.Text
 		}
 	case ProdColCurrent:
 		if x.Value6408 != nil {
@@ -218,8 +254,8 @@ func (m *DafProductsTable) StyleCell(style *walk.CellStyle) {
 		}
 	case ProdColConnection:
 
-		if p.connection != nil {
-			if p.connection.ok {
+		if p.Connection != nil {
+			if p.Connection.Ok {
 				style.TextColor = walk.RGB(0, 0, 128)
 				style.Image = assets.ImgCheckMark
 			} else {

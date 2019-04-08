@@ -10,17 +10,15 @@ import (
 
 type DafProductValuesTable struct {
 	walk.TableModelBase
-	party       *data.Party
-	product     *data.Product
-	items       []*data.ProductValue
-	synchronize synchronizeFunc
+	party   *data.Party
+	product *data.Product
+	items   []*data.ProductValue
 }
 
-func NewDafProductValuesTable(synchronize synchronizeFunc) *DafProductValuesTable {
+func NewDafProductValuesTable() *DafProductValuesTable {
 	return &DafProductValuesTable{
-		synchronize: synchronize,
-		party:       new(data.Party),
-		product:     new(data.Product),
+		party:   new(data.Party),
+		product: new(data.Product),
 	}
 }
 
@@ -43,9 +41,7 @@ func (m *DafProductValuesTable) SetProduct(productID int64) {
 	for _, x := range xs {
 		m.items = append(m.items, x.(*data.ProductValue))
 	}
-	m.synchronize(func() {
-		m.PublishRowsReset()
-	})
+	m.PublishRowsReset()
 }
 
 func (m *DafProductValuesTable) RowCount() int {
@@ -75,6 +71,9 @@ func (m *DafProductValuesTable) StyleCell(style *walk.CellStyle) {
 
 	p := m.items[style.Row()]
 	switch ProductValueColumn(style.Col()) {
+
+	case ProdValColTime:
+		style.TextColor = walk.RGB(0, 128, 0)
 
 	case ProdValColThreshold1:
 		if p.Threshold1 {

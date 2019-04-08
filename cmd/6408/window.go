@@ -66,8 +66,9 @@ func runMainWindow() error {
 	var (
 		cbComportDaf,
 		cbComportHart *walk.ComboBox
-		tblViewProducts      *walk.TableView
-		tblViewProductValues *walk.TableView
+		tblViewProducts,
+		tblViewProductValues,
+		tblViewProductEntries *walk.TableView
 
 		neCmd, neArg         *walk.NumberEdit
 		pbCancelWork         *walk.PushButton
@@ -79,10 +80,6 @@ func runMainWindow() error {
 
 	prodsMdl = viewmodel.NewDafProductsTable(func(f func()) {
 		tblViewProducts.Synchronize(f)
-	})
-
-	prodValuesMdl = viewmodel.NewDafProductValuesTable(func(f func()) {
-		tblViewProductValues.Synchronize(f)
 	})
 
 	showErr := func(title, text string) {
@@ -101,8 +98,10 @@ func runMainWindow() error {
 			panic("already started")
 		}
 		workStarted = true
-		comportContext, cancelComport = context.WithCancel(context.Background())
 
+		prodsMdl.ClearConnectionsInfo()
+
+		comportContext, cancelComport = context.WithCancel(context.Background())
 		btnRun.SetVisible(false)
 		gbCmd.SetVisible(false)
 
@@ -112,6 +111,7 @@ func runMainWindow() error {
 		_ = lblWorkTime.SetText(time.Now().Format("15:04:05"))
 		_ = lblWork.SetText(fmt.Sprintf("%s: выполняется", what))
 		lblWork.SetTextColor(walk.RGB(128, 0, 0))
+
 		go func() {
 			err := work()
 
@@ -194,6 +194,34 @@ func runMainWindow() error {
 				})
 			},
 		})
+	}
+
+	prodValuesMdl := viewmodel.NewDafProductValuesTable()
+
+	validateProductValuesTable := func() {
+		n := tblViewProducts.CurrentIndex()
+		if n > -1 && n < prodsMdl.RowCount() {
+			prodValuesMdl.SetProduct(prodsMdl.ProductAt(n).ProductID)
+			if prodValuesMdl.RowCount() > 0 {
+				tblViewProductValues.SetVisible(true)
+				return
+			}
+		}
+		tblViewProductValues.SetVisible(false)
+	}
+
+	prodEntriesMdl := viewmodel.NewDafProductEntriesTable()
+
+	validateProductEntriesTable := func() {
+		n := tblViewProducts.CurrentIndex()
+		if n > -1 && n < prodsMdl.RowCount() {
+			prodEntriesMdl.SetProduct(prodsMdl.ProductAt(n).ProductID)
+			if prodEntriesMdl.RowCount() > 0 {
+				tblViewProductEntries.SetVisible(true)
+				return
+			}
+		}
+		tblViewProductEntries.SetVisible(false)
 	}
 
 	if err := (MainWindow{
@@ -302,16 +330,8 @@ func runMainWindow() error {
 
 						},
 						OnCurrentIndexChanged: func() {
-							n := tblViewProducts.CurrentIndex()
-							if n > -1 && n < prodsMdl.RowCount() {
-								prodValuesMdl.SetProduct(prodsMdl.ProductAt(n).ProductID)
-								if prodValuesMdl.RowCount() > 0 {
-									tblViewProductValues.SetVisible(true)
-									return
-								}
-							}
-							tblViewProductValues.SetVisible(false)
-
+							validateProductValuesTable()
+							validateProductEntriesTable()
 						},
 
 						Columns: viewmodel.ProductColumns,
@@ -356,12 +376,24 @@ func runMainWindow() error {
 					},
 				},
 			},
-			TableView{
-				AssignTo:                 &tblViewProductValues,
-				NotSortableByHeaderClick: true,
-				LastColumnStretched:      true,
-				Model:                    prodValuesMdl,
-				Columns:                  viewmodel.ProductValueColumns,
+			Composite{
+				Layout: HBox{SpacingZero: true, MarginsZero: true},
+				Children: []Widget{
+					TableView{
+						AssignTo:                 &tblViewProductValues,
+						NotSortableByHeaderClick: true,
+						LastColumnStretched:      true,
+						Model:                    prodValuesMdl,
+						Columns:                  viewmodel.ProductValueColumns,
+					},
+					TableView{
+						AssignTo:                 &tblViewProductEntries,
+						NotSortableByHeaderClick: true,
+						LastColumnStretched:      true,
+						Model:                    prodEntriesMdl,
+						Columns:                  viewmodel.ProductEntryColumns,
+					},
+				},
 			},
 		},
 	}).Create(); err != nil {

@@ -27,7 +27,7 @@ func (v *productTableType) Name() string {
 
 // Columns returns a new slice of column names for that view or table in SQL database.
 func (v *productTableType) Columns() []string {
-	return []string{"product_id", "party_id", "created_at", "serial", "addr", "checked"}
+	return []string{"product_id", "party_id", "created_at", "serial", "addr"}
 }
 
 // NewStruct makes a new struct for that view or table.
@@ -47,19 +47,18 @@ func (v *productTableType) PKColumnIndex() uint {
 
 // ProductTable represents product view or table in SQL database.
 var ProductTable = &productTableType{
-	s: parse.StructInfo{Type: "Product", SQLSchema: "", SQLName: "product", Fields: []parse.FieldInfo{{Name: "ProductID", Type: "int64", Column: "product_id"}, {Name: "PartyID", Type: "int64", Column: "party_id"}, {Name: "CreatedAt", Type: "time.Time", Column: "created_at"}, {Name: "Serial", Type: "int64", Column: "serial"}, {Name: "Addr", Type: "modbus.Addr", Column: "addr"}, {Name: "Checked", Type: "bool", Column: "checked"}}, PKFieldIndex: 0},
+	s: parse.StructInfo{Type: "Product", SQLSchema: "", SQLName: "product", Fields: []parse.FieldInfo{{Name: "ProductID", Type: "int64", Column: "product_id"}, {Name: "PartyID", Type: "int64", Column: "party_id"}, {Name: "CreatedAt", Type: "time.Time", Column: "created_at"}, {Name: "Serial", Type: "int64", Column: "serial"}, {Name: "Addr", Type: "modbus.Addr", Column: "addr"}}, PKFieldIndex: 0},
 	z: new(Product).Values(),
 }
 
 // String returns a string representation of this struct or record.
 func (s Product) String() string {
-	res := make([]string, 6)
+	res := make([]string, 5)
 	res[0] = "ProductID: " + reform.Inspect(s.ProductID, true)
 	res[1] = "PartyID: " + reform.Inspect(s.PartyID, true)
 	res[2] = "CreatedAt: " + reform.Inspect(s.CreatedAt, true)
 	res[3] = "Serial: " + reform.Inspect(s.Serial, true)
 	res[4] = "Addr: " + reform.Inspect(s.Addr, true)
-	res[5] = "Checked: " + reform.Inspect(s.Checked, true)
 	return strings.Join(res, ", ")
 }
 
@@ -72,7 +71,6 @@ func (s *Product) Values() []interface{} {
 		s.CreatedAt,
 		s.Serial,
 		s.Addr,
-		s.Checked,
 	}
 }
 
@@ -85,7 +83,6 @@ func (s *Product) Pointers() []interface{} {
 		&s.CreatedAt,
 		&s.Serial,
 		&s.Addr,
-		&s.Checked,
 	}
 }
 
