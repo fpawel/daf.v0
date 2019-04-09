@@ -32,7 +32,7 @@ func EN6408SetConnectionLine(place int, connLine EN6408ConnectionLine) error {
 	})
 	if err != nil {
 
-		return ErrEN6408.WithMessagef("стенд 6408: место %d: выбор линии связи %d: %v", place+1, connLine, err)
+		return ErrEN6408.Appendf("место %d: выбор линии связи %d: %v", place+1, connLine, err)
 	}
 	return err
 }
@@ -50,7 +50,7 @@ func EN6408Read(place int) (*viewmodel.DafValue6408, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, ErrEN6408.WithMessagef("стенд 6408: опрос места %d: %v", place+1, err)
+		return nil, ErrEN6408.Appendf("опрос места %d: %v", place+1, err)
 	}
 	b = b[3:]
 	v := new(viewmodel.DafValue6408)
@@ -74,7 +74,7 @@ func switchGas(gas data.Gas) error {
 	})
 
 	if err != nil {
-		return ErrGasBlock.WithMessagef("газовый блок: %d: %v", gas, err)
+		return ErrGasBlock.Appendf("клапан %d: %v", gas, err)
 	}
 	return nil
 }
