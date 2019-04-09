@@ -61,8 +61,6 @@ func (m *DafProductValuesTable) Value(row, col int) interface{} {
 		return x.Concentration
 	case ProdValColCurr:
 		return x.Current
-	case ProdValColTestName:
-		return x.Name
 	}
 	return ""
 }
@@ -101,11 +99,10 @@ const (
 	ProdValColCurr
 	ProdValColThreshold1
 	ProdValColThreshold2
-	ProdValColTestName
 )
 
 var ProductValueColumns = func() []TableViewColumn {
-	x := make([]TableViewColumn, ProdValColTestName+1)
+	x := make([]TableViewColumn, ProdValColThreshold2+1)
 
 	type t = TableViewColumn
 	x[ProdValColWorkIndex] =
@@ -122,7 +119,5 @@ var ProductValueColumns = func() []TableViewColumn {
 		t{Title: "Порог 1", Width: 120}
 	x[ProdValColThreshold2] =
 		t{Title: "Порог 2", Width: 120}
-	x[ProdValColTestName] =
-		t{Title: "Наименование проверки"}
 	return x
 }()

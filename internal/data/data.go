@@ -8,6 +8,7 @@ import (
 	"gopkg.in/reform.v1"
 	"gopkg.in/reform.v1/dialects/sqlite3"
 	"path/filepath"
+	"time"
 )
 
 //go:generate go run github.com/fpawel/elco/cmd/utils/sqlstr/...
@@ -81,39 +82,34 @@ func CreateNewParty() int64 {
 	return partyID
 }
 
-func GetProductEntry(productID int64, workName string) (ent *ProductEntry) {
-	ent = new(ProductEntry)
-	err := DBProducts.SelectOneTo(ent, "WHERE product_id = ? AND name = ?", workName)
-	if err != reform.ErrNoRows {
-		return nil
-	}
-	if err != nil {
-		panic(err)
-	}
-	return
-}
-
 func ClearCurrentProductsWorkResult(workName string) {
 	DBxProducts.MustExec(`
 DELETE FROM product_entry
-WHERE name = ? 
+WHERE work_name = ? 
 AND product_id IN ( 
 	SELECT product_id 
 	FROM product 
 	WHERE party_id = (SELECT party_id FROM last_party))`, workName)
 }
 
-func SetProductWorkInfo(productID int64, workName, message string) {
-	SetProductEntry(productID, workName, true, message)
-}
-func SetProductWorkError(productID int64, workName string, err error) {
-	SetProductEntry(productID, workName, false, err.Error())
+func WriteProductInfo(productID int64, workName, message string) {
+	WriteProductEntry(productID, workName, true, message)
 }
 
-func SetProductEntry(productID int64, workName string, ok bool, message string) {
-	DBxProducts.MustExec(`
-INSERT OR REPLACE INTO product_entry (product_id, name, ok, message)
-VALUES (?, ?, ?, ?)`, productID, workName, ok, message)
+func WriteProductError(productID int64, workName string, err error) {
+	WriteProductEntry(productID, workName, false, err.Error())
+}
+
+func WriteProductEntry(productID int64, workName string, ok bool, message string) {
+	if err := DBProducts.Save(&ProductEntry{
+		CreatedAt: time.Now(),
+		ProductID: productID,
+		Ok:        ok,
+		Message:   message,
+		WorkName:  workName,
+	}); err != nil {
+		panic(err)
+	}
 }
 
 var (

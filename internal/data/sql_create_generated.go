@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS product_value
     current          REAL                NOT NULL,
     threshold1       BOOLEAN             NOT NULL,
     threshold2       BOOLEAN             NOT NULL,
+    mode             INTEGER             NOT NULL,
+    failure_code     REAL                NOT NULL,
     UNIQUE (product_id, name, work_index),
     FOREIGN KEY (product_id) REFERENCES product (product_id) ON DELETE CASCADE
 );
@@ -60,10 +62,9 @@ CREATE TABLE IF NOT EXISTS product_entry
     product_entry_id INTEGER PRIMARY KEY NOT NULL,
     product_id       INTEGER             NOT NULL,
     created_at       TIMESTAMP           NOT NULL DEFAULT (datetime('now')),
-    name             TEXT                NOT NULL,
+    work_name        TEXT                NOT NULL,
     ok               BOOlEAN             NOT NULL,
     message          TEXT                NOT NULL,
-    UNIQUE (product_id, name),
     FOREIGN KEY (product_id) REFERENCES product (product_id) ON DELETE CASCADE
 );
 
@@ -73,4 +74,7 @@ FROM party
 ORDER BY created_at DESC
 LIMIT 1;
 
+
+CREATE VIEW IF NOT EXISTS last_party_products AS
+    SELECT * FROM product WHERE party_id = (SELECT party_id FROM last_party);
 `

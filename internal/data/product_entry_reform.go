@@ -27,7 +27,7 @@ func (v *productEntryTableType) Name() string {
 
 // Columns returns a new slice of column names for that view or table in SQL database.
 func (v *productEntryTableType) Columns() []string {
-	return []string{"product_entry_id", "product_id", "created_at", "name", "ok", "message"}
+	return []string{"product_entry_id", "product_id", "created_at", "work_name", "ok", "message"}
 }
 
 // NewStruct makes a new struct for that view or table.
@@ -47,7 +47,7 @@ func (v *productEntryTableType) PKColumnIndex() uint {
 
 // ProductEntryTable represents product_entry view or table in SQL database.
 var ProductEntryTable = &productEntryTableType{
-	s: parse.StructInfo{Type: "ProductEntry", SQLSchema: "", SQLName: "product_entry", Fields: []parse.FieldInfo{{Name: "ProductEntryID", Type: "int64", Column: "product_entry_id"}, {Name: "ProductID", Type: "int64", Column: "product_id"}, {Name: "CreatedAt", Type: "time.Time", Column: "created_at"}, {Name: "Name", Type: "string", Column: "name"}, {Name: "Ok", Type: "bool", Column: "ok"}, {Name: "Message", Type: "string", Column: "message"}}, PKFieldIndex: 0},
+	s: parse.StructInfo{Type: "ProductEntry", SQLSchema: "", SQLName: "product_entry", Fields: []parse.FieldInfo{{Name: "ProductEntryID", Type: "int64", Column: "product_entry_id"}, {Name: "ProductID", Type: "int64", Column: "product_id"}, {Name: "CreatedAt", Type: "time.Time", Column: "created_at"}, {Name: "WorkName", Type: "string", Column: "work_name"}, {Name: "Ok", Type: "bool", Column: "ok"}, {Name: "Message", Type: "string", Column: "message"}}, PKFieldIndex: 0},
 	z: new(ProductEntry).Values(),
 }
 
@@ -57,7 +57,7 @@ func (s ProductEntry) String() string {
 	res[0] = "ProductEntryID: " + reform.Inspect(s.ProductEntryID, true)
 	res[1] = "ProductID: " + reform.Inspect(s.ProductID, true)
 	res[2] = "CreatedAt: " + reform.Inspect(s.CreatedAt, true)
-	res[3] = "Name: " + reform.Inspect(s.Name, true)
+	res[3] = "WorkName: " + reform.Inspect(s.WorkName, true)
 	res[4] = "Ok: " + reform.Inspect(s.Ok, true)
 	res[5] = "Message: " + reform.Inspect(s.Message, true)
 	return strings.Join(res, ", ")
@@ -70,7 +70,7 @@ func (s *ProductEntry) Values() []interface{} {
 		s.ProductEntryID,
 		s.ProductID,
 		s.CreatedAt,
-		s.Name,
+		s.WorkName,
 		s.Ok,
 		s.Message,
 	}
@@ -83,7 +83,7 @@ func (s *ProductEntry) Pointers() []interface{} {
 		&s.ProductEntryID,
 		&s.ProductID,
 		&s.CreatedAt,
-		&s.Name,
+		&s.WorkName,
 		&s.Ok,
 		&s.Message,
 	}

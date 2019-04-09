@@ -54,8 +54,8 @@ func (m *DafProductEntriesTable) Value(row, col int) interface{} {
 	case ProdEntryColTime:
 		return x.CreatedAt
 
-	case ProdEntryColName:
-		return x.Name
+	case ProdEntryColWorkName:
+		return x.WorkName
 
 	case ProdEntryColMessage:
 		return x.Message
@@ -87,7 +87,7 @@ type ProductEntryColumn int
 
 const (
 	ProdEntryColTime ProductEntryColumn = iota
-	ProdEntryColName
+	ProdEntryColWorkName
 	ProdEntryColMessage
 )
 
@@ -96,7 +96,7 @@ var ProductEntryColumns = func() []TableViewColumn {
 	type t = TableViewColumn
 	x[ProdEntryColTime] =
 		t{Title: "Дата", Width: 150, Format: "02.01.06 15:04"}
-	x[ProdEntryColName] =
+	x[ProdEntryColWorkName] =
 		t{Title: "Проверка", Width: 120}
 	x[ProdEntryColMessage] =
 		t{Title: "Содержание"}

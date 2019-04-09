@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/ansel1/merry"
 	"github.com/fpawel/daf/internal/data"
 	"github.com/fpawel/daf/internal/viewmodel"
@@ -11,145 +12,37 @@ import (
 	"github.com/fpawel/elco/pkg/serial-comm/modbus"
 	"github.com/fpawel/serial"
 	"github.com/hako/durafmt"
+	"github.com/lxn/walk"
 	"github.com/sirupsen/logrus"
 	"time"
 )
 
-func performWork(workName string, work func() error) error {
-	data.ClearCurrentProductsWorkResult(workName)
-	if err := work(); err != nil {
-		for _, p := range prodsMdl.CheckedProducts() {
-			data.SetProductWorkError(p.ProductID, workName, err)
-		}
-		return err
-	}
+func isFailWork(err error) bool {
+	return err != nil && !isDeviceError(err)
+}
 
-	for _, p := range prodsMdl.CheckedProducts() {
-		if p.Connection != nil {
-			data.SetProductEntry(p.ProductID, workName, p.Connection.Ok, p.Connection.Text)
+func isDeviceError(err error) bool {
+	return merry.Is(err, comm.ErrProtocol) || merry.Is(err, context.DeadlineExceeded)
+}
+
+type Product = viewmodel.DafProductViewModel
+
+func doForEachOkProduct(work func(p *Product) error) error {
+	if len(prodsMdl.OkProducts()) == 0 {
+		return ErrNoOkProducts
+	}
+	for _, p := range prodsMdl.OkProducts() {
+		if err := work(p); isFailWork(err) {
+			return err
 		}
 	}
 	return nil
 }
 
-func setupCurrents() error {
+func dafSendCmdToEachOkProduct(cmd modbus.DevCmd, arg float64) error {
 
-	return performWork("настройка токового выхода", func() error {
-		for place, p := range prodsMdl.OkProducts() {
-			if err := sendCmdPlace(place, p.Addr, 0xB, 1); err != nil && !IsDeviceError(err) {
-				return err
-			}
-		}
-
-		sleep(5 * time.Second)
-
-		for place, p := range data.GetProductsOfLastParty() {
-			v, err := read6408(place, p.Addr)
-			if err != nil {
-				return err
-			}
-			if err = sendCmdPlace(place, p.Addr, 9, v.Current); err != nil && !IsDeviceError(err) {
-				return err
-			}
-			if err = sendCmdPlace(place, p.Addr, 0xC, 1); err != nil && !IsDeviceError(err) {
-				return err
-			}
-		}
-
-		sleep(5 * time.Second)
-
-		for place, p := range prodsMdl.OkProducts() {
-			v, err := read6408(place, p.Addr)
-			if err != nil {
-				return err
-			}
-			if err := sendCmdPlace(place, p.Addr, 0xA, v.Current); err != nil && !IsDeviceError(err) {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-func interrogateProducts() error {
-	for {
-		if len(prodsMdl.OkProducts()) == 0 {
-			return errors.New("не выбрано ни одной строки в таблице приборов текущей партии")
-		}
-		for place, p := range prodsMdl.OkProducts() {
-			if _, err := read6408(place, p.Addr); err != nil {
-				return err
-			}
-			if _, err := readDaf(place, p.Addr); err != nil && !IsDeviceError(err) {
-				return err
-			}
-		}
-	}
-}
-
-func read6408(place int, addr modbus.Addr) (*viewmodel.DafValue6408, error) {
-
-	prodsMdl.SetInterrogatePlace(place)
-	defer func() {
-		prodsMdl.SetInterrogatePlace(-1)
-	}()
-	b, err := modbus.Read3(portDaf, 32, modbus.Var(addr-1)*2, 2, func(_, _ []byte) error {
-		return nil
-	})
-	if err != nil {
-		return nil, merry.Append(err, "запрос тока и состояния контактов реле")
-	}
-	b = b[3:]
-	v := new(viewmodel.DafValue6408)
-	v.Current = (float64(b[0])*256 + float64(b[1])) / 100
-	v.Threshold1 = b[3]&1 == 0
-	v.Threshold2 = b[3]&2 == 0
-	logrus.Debugf("адрес %d: %v", addr, *v)
-	prodsMdl.Set6408Value(place, *v)
-	return v, nil
-}
-
-func readDaf(place int, addr modbus.Addr) (v viewmodel.DafValue, err error) {
-	prodsMdl.SetInterrogatePlace(place)
-	defer func() {
-		prodsMdl.SetInterrogatePlace(-1)
-	}()
-	v, err = doReadDaf(addr)
-	if err != nil {
-		if merry.Is(err, comm.ErrProtocol) || merry.Is(err, context.DeadlineExceeded) {
-			prodsMdl.SetConnectionErrorAt(place, err)
-		}
-		logrus.Errorf("место %d, адрес %d: %v", place+1, addr, err)
-		return
-	}
-	logrus.Debugf("место %d, адрес %d: %v", place+1, addr, v)
-	prodsMdl.SetDafValue(place, v)
-	return
-}
-
-func doReadDaf(addr modbus.Addr) (v viewmodel.DafValue, err error) {
-
-	for _, x := range []struct {
-		var3 modbus.Var
-		p    *float64
-	}{
-		{0x00, &v.Concentration},
-		{0x1C, &v.Threshold1},
-		{0x1E, &v.Threshold2},
-		{0x20, &v.Failure},
-		{0x36, &v.Version},
-		{0x3A, &v.VersionID},
-		{0x32, &v.Gas},
-	} {
-		if *x.p, err = modbus.Read3BCD(portDaf, addr, x.var3); err != nil {
-			return
-		}
-	}
-	v.Mode, err = modbus.ReadUInt16(portDaf, addr, 0x23)
-	return
-}
-
-func sendCmd(cmd modbus.DevCmd, arg float64) error {
+	dafMainWindow.SetWorkStatus(walk.RGB(0, 0, 128),
+		fmt.Sprintf("отправка команды %X, %v", cmd, arg))
 
 	if cmd == 5 {
 		if err := portDaf.open(); err != nil {
@@ -159,49 +52,210 @@ func sendCmd(cmd modbus.DevCmd, arg float64) error {
 		return err
 	}
 
-	for place, p := range prodsMdl.OkProducts() {
-		if err := sendCmdPlace(place, p.Addr, cmd, arg); err != nil && !IsDeviceError(err) {
+	return doForEachOkProduct(func(p *Product) error {
+		return dafSendCmdToPlace(p.Place, cmd, arg)
+	})
+}
+
+func blowGas(gas data.Gas) error {
+	if err := switchGas(gas); err != nil {
+		if !dafMainWindow.IgnoreErrorPrompt(fmt.Sprintf("газовый блок: %d", gas), err) {
 			return err
 		}
+	}
+	t := 5 * time.Minute
+	if gas == 1 {
+		t = 10 * time.Minute
+	}
+	return delay(fmt.Sprintf("продувка ПГС%d", gas), t)
+}
+
+func dafSetupCurrent() error {
+	setCurrentWorkName("настройка токового выхода")
+
+	if err := dafSendCmdToEachOkProduct(0xB, 1); err != nil {
+		return err
+	}
+
+	sleep(5 * time.Second)
+
+	dafMainWindow.SetWorkStatus(ColorNavy, "корректировка тока 4 мА")
+
+	if err := doForEachOkProduct(func(p *Product) error {
+		v, err := EN6408Read(p.Place) // считать тока со стенда
+		if err != nil {
+			return err
+		}
+		return dafSendCmdToPlace(p.Place, 9, v.Current)
+	}); err != nil {
+		return err
+	}
+
+	if err := dafSendCmdToEachOkProduct(0xC, 1); err != nil {
+		return err
+	}
+
+	sleep(5 * time.Second)
+
+	dafMainWindow.SetWorkStatus(ColorNavy, "корректировка тока 20 мА")
+	if err := doForEachOkProduct(func(p *Product) error {
+		v, err := EN6408Read(p.Place)
+		if err != nil {
+			return err
+		}
+		return dafSendCmdToPlace(p.Place, 0xA, v.Current)
+	}); err != nil {
+		return err
 	}
 	return nil
 }
 
-func sendCmdPlace(place int, addr modbus.Addr, cmd modbus.DevCmd, arg float64) error {
-	prodsMdl.SetInterrogatePlace(place)
+func dafSetupThresholdTest() error {
+
+	setCurrentWorkName("установка порогов для настройки")
+
+	party := data.GetLastParty()
+
+	if err := dafSendCmdToEachOkProduct(0x30, party.Threshold1Test); err != nil {
+		return err
+	}
+	if err := dafSendCmdToEachOkProduct(0x31, party.Threshold2Test); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func dafAdjust() error {
+
+	party := data.GetLastParty()
+
+	setCurrentWorkName("корректировка нулевых показаний")
+
 	defer func() {
-		prodsMdl.SetInterrogatePlace(-1)
+		_ = switchGas(0)
 	}()
 
-	err := modbus.Write32FloatProto(portDaf, addr, 0x10, cmd, arg)
-	if err == nil {
-		logrus.Infof("ДАФ №%d, адрес %d: запись в 32-ой регистр %X, %v", place+1, addr, cmd, arg)
-		prodsMdl.SetConnectionOkAt(place)
+	if err := blowGas(1); err != nil {
+		return err
+	}
+	if err := dafSendCmdToEachOkProduct(0x32, party.Pgs1); err != nil {
+		return err
+	}
+
+	setCurrentWorkName("корректировка чувствительности")
+
+	if err := blowGas(4); err != nil {
+		return err
+	}
+	if err := dafSendCmdToEachOkProduct(0x33, party.Pgs4); err != nil {
+		return err
+	}
+	return nil
+}
+
+func dafTestMeasureRange() error {
+
+	defer func() {
+		_ = switchGas(0)
+	}()
+
+	setCurrentWorkName("проверка диапазона измерений")
+
+	for n, gas := range []data.Gas{1, 2, 3, 4, 3, 1} {
+
+		what := fmt.Sprintf("проверка диапазона измерений: ПГС%d, точка %d", gas, n+1)
+
+		dafMainWindow.SetWorkStatus(ColorNavy, what+": продувка газа")
+
+		if err := blowGas(gas); err != nil {
+			return err
+		}
+
+		dafMainWindow.SetWorkStatus(ColorNavy, what+": опрос и сохранение данных")
+
+		if err := doForEachOkProduct(func(p *Product) error {
+
+			dv, err := dafReadAtPlace(p.Place)
+			if isFailWork(err) {
+				return nil
+			}
+			v, err := EN6408Read(p.Place)
+			if err != nil {
+				return nil
+			}
+			value := data.ProductValue{
+				ProductID:     p.ProductID,
+				Gas:           gas,
+				CreatedAt:     time.Now(),
+				WorkIndex:     n,
+				Concentration: dv.Concentration,
+				Current:       v.Current,
+				Threshold1:    v.Threshold1,
+				Threshold2:    v.Threshold2,
+				Mode:          dv.Mode,
+				FailureCode:   dv.Failure,
+			}
+
+			data.DBxProducts.MustExec(
+				`DELETE FROM product_value WHERE product_id = ? AND name = ? AND work_index = ?`,
+				p.ProductID, "диапазон измерений", n)
+
+			if err := data.DBProducts.Save(&value); err != nil {
+				panic(err)
+			}
+			logrus.Infof("сохранено значение: место %d, адрес %d: %v", p.Place, p.Addr, value)
+
+			return nil
+
+		}); err != nil {
+			return err
+		}
+	}
+
+	if err := blowGas(1); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func dafTestStability() error {
+	if err := blowGas(3); err != nil {
+		return err
+	}
+	return nil
+}
+
+func dafSetupMain() error {
+	for _, f := range []func() error{dafSetupCurrent, dafSetupThresholdTest, dafAdjust, dafTestMeasureRange} {
+		if err := f(); err != nil {
+			return err
+		}
+	}
+	if data.GetLastParty().Type == 0 {
 		return nil
 	}
-	logrus.Errorf("ДАФ №%d, адрес %d: %v", place+1, addr, err)
-	prodsMdl.SetConnectionErrorAt(place, err)
-	return err
+
+	setCurrentWorkName("проверка HART протокола")
+	return doForEachOkProduct(testHart)
 }
 
-func switchGas(gas data.Gas) error {
-
-	req := modbus.Req{
-		Addr:     33,
-		ProtoCmd: 0x10,
-		Data:     []byte{0, 32, 0, 1, 2, 0, byte(gas)},
+func interrogateProducts() error {
+	currentWorkName = ""
+	for {
+		if len(prodsMdl.OkProducts()) == 0 {
+			return errors.New("не выбрано ни одной строки в таблице приборов текущей партии")
+		}
+		for _, p := range prodsMdl.OkProducts() {
+			if _, err := EN6408Read(p.Place); err != nil {
+				return err
+			}
+			if _, err := dafReadAtPlace(p.Place); isFailWork(err) {
+				return err
+			}
+		}
 	}
-	_, err := portDaf.GetResponse(req.Bytes(), func(_, response []byte) error {
-		return req.CheckResponse(response)
-	})
-	if err != nil {
-		err = merry.Appendf(err, "газовый блок: %d", gas)
-	}
-	return err
-}
-
-func IsDeviceError(err error) bool {
-	return merry.Is(err, comm.ErrProtocol) || merry.Is(err, context.DeadlineExceeded)
 }
 
 type port struct {
@@ -225,6 +279,10 @@ func (x port) GetResponse(request []byte, prs comm.ResponseParser) ([]byte, erro
 }
 
 func sleep(t time.Duration) {
+	logrus.Infoln("пауза", durafmt.Parse(t))
+	defer func() {
+		logrus.Infoln("окончание паузы", durafmt.Parse(t))
+	}()
 	timer := time.NewTimer(t)
 	defer timer.Stop()
 	for {
@@ -244,8 +302,9 @@ func delay(what string, total time.Duration) error {
 	comportContext = ctxDelay
 	defer func() {
 		comportContext = originalComportContext
-		guiHideDelay()
+		dafMainWindow.DelayHelp.Hide()
 	}()
+
 	startMoment := time.Now()
 
 	skipDelay = func() {
@@ -253,36 +312,57 @@ func delay(what string, total time.Duration) error {
 		logrus.Warnf("%s %s: задержка прервана: %s", what, durafmt.Parse(total),
 			durafmt.Parse(time.Since(startMoment)))
 	}
-	guiShowDelay(what, total)
+	dafMainWindow.DelayHelp.Show(what, total)
 
 	for {
-		if len(prodsMdl.OkProducts()) == 0 {
-			return errors.New("не выбрано ни одной строки в таблице приборов текущей партии")
-		}
-		for place, p := range prodsMdl.OkProducts() {
+		for _, p := range prodsMdl.OkProducts() {
+			_, err := dafReadAtPlace(p.Place)
 			if ctxDelay.Err() != nil {
 				return nil
 			}
-			if !p.Checked {
-				continue
+			if isFailWork(err) {
+				return err
 			}
-
-			_, err := readDaf(place, p.Addr)
-			if err == nil ||
-				merry.Is(err, comm.ErrProtocol) ||
-				merry.Is(err, context.DeadlineExceeded) {
-				continue
-			}
-			if merry.Is(err, context.Canceled) {
-				return nil
-			}
-			return err
 		}
+
+		func() {
+			timer := time.NewTimer(5 * time.Second)
+			for {
+				select {
+				case <-timer.C:
+					return
+				case <-ctxDelay.Done():
+					timer.Stop()
+					return
+				}
+			}
+		}()
+
 	}
 }
 
+func onPlaceConnectionError(place int, err error) {
+	p := prodsMdl.ProductAt(place)
+	logrus.Errorf("место %d, адрес %d, серийный номер %d, ID %d: %v",
+		place+1, p.Addr, p.Serial, p.ProductID, err)
+	prodsMdl.SetConnectionErrorAt(place, err)
+	if currentWorkName != "" {
+		data.WriteProductError(p.ProductID, currentWorkName, err)
+	}
+}
+
+func setCurrentWorkName(workName string) {
+	data.DBxProducts.MustExec(
+		`DELETE FROM product_entry 
+WHERE work_name = ? 
+  AND product_id IN (SELECT product_id FROM last_party_products)`, workName)
+	currentWorkName = workName
+}
+
 var (
-	prodsMdl *viewmodel.DafProductsTable
+	dafMainWindow   DafMainWindow
+	prodsMdl        *viewmodel.DafProductsTable
+	currentWorkName string
 
 	portDaf = port{
 		Port: comport.NewPort("стенд", serial.Config{Baud: 9600}, func(entry comport.Entry) {
@@ -315,6 +395,5 @@ var (
 	skipDelay      = func() {}
 	comportContext context.Context
 
-	guiShowDelay func(what string, total time.Duration)
-	guiHideDelay func()
+	ErrNoOkProducts = merry.New("отстутсвуют приборы, которые отмеченны галочками и не имеют ошибок связи")
 )

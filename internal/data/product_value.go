@@ -14,9 +14,10 @@ type ProductValue struct {
 	CreatedAt      time.Time `reform:"created_at"`
 	WorkIndex      int       `reform:"work_index"`
 	Gas            Gas       `reform:"gas"`
-	Name           string    `reform:"name"`
 	Concentration  float64   `reform:"concentration"`
 	Current        float64   `reform:"current"`
 	Threshold1     bool      `reform:"threshold1"`
 	Threshold2     bool      `reform:"threshold2"`
+	Mode           uint16    `reform:"mode"`
+	FailureCode    float64   `reform:"failure_code"`
 }

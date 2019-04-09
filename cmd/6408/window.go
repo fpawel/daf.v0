@@ -10,24 +10,42 @@ import (
 	"github.com/fpawel/elco/pkg/serial-comm/modbus"
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
+	"github.com/lxn/win"
 	"log"
 	"math"
 	"time"
 )
 
-func getComports() []string {
-	ports, _ := comport.AvailablePorts()
-	return ports
+type DafMainWindow struct {
+	*walk.MainWindow
+	lblWork,
+	lblWorkTime *walk.Label
+	DelayHelp *delayHelp
 }
 
-func comportIndex(portName string) int {
-	ports, _ := comport.AvailablePorts()
-	for i, s := range ports {
-		if s == portName {
-			return i
-		}
+func (mw DafMainWindow) SetWorkStatus(color walk.Color, text string) {
+	mw.Synchronize(
+		func() {
+			_ = mw.lblWorkTime.SetText(time.Now().Format("15:04:05"))
+			_ = mw.lblWork.SetText(text)
+			mw.lblWork.SetTextColor(color)
+		})
+
+}
+
+func (mw DafMainWindow) IgnoreErrorPrompt(title string, err error) (result bool) {
+	if merry.Is(err, context.Canceled) {
+		return false
 	}
-	return -1
+	ch := make(chan struct{})
+	mw.Synchronize(func() {
+		result = walk.MsgBox(dafMainWindow.MainWindow, title,
+			err.Error()+"\n\nИгнорировать ошибку и продолжить?",
+			walk.MsgBoxIconError|walk.MsgBoxYesNo) == win.IDYES
+		ch <- struct{}{}
+	})
+	<-ch
+	return
 }
 
 func runMainWindow() error {
@@ -69,13 +87,12 @@ func runMainWindow() error {
 		tblViewProducts,
 		tblViewProductValues,
 		tblViewProductEntries *walk.TableView
-
-		neCmd, neArg         *walk.NumberEdit
-		pbCancelWork         *walk.PushButton
-		lblWork, lblWorkTime *walk.Label
-		btnRun               *walk.SplitButton
-		gbCmd                *walk.GroupBox
-		mainWindow           *walk.MainWindow
+		gbProductValues,
+		gbProductEntries *walk.GroupBox
+		neCmd, neArg *walk.NumberEdit
+		pbCancelWork *walk.PushButton
+		btnRun       *walk.SplitButton
+		gbCmd        *walk.GroupBox
 	)
 
 	prodsMdl = viewmodel.NewDafProductsTable(func(f func()) {
@@ -83,14 +100,11 @@ func runMainWindow() error {
 	})
 
 	showErr := func(title, text string) {
-		walk.MsgBox(mainWindow, title,
+		walk.MsgBox(dafMainWindow.MainWindow, title,
 			text, walk.MsgBoxIconError|walk.MsgBoxOK)
 	}
 
-	delayProgress := new(delayHelp)
-
-	guiShowDelay = delayProgress.Show
-	guiHideDelay = delayProgress.Hide
+	dafMainWindow.DelayHelp = new(delayHelp)
 
 	var workStarted bool
 	doWork := func(what string, work func() error) {
@@ -108,16 +122,14 @@ func runMainWindow() error {
 		portDaf.PortName = cbComportDaf.Text()
 		portHart.PortName = cbComportHart.Text()
 		pbCancelWork.SetVisible(true)
-		_ = lblWorkTime.SetText(time.Now().Format("15:04:05"))
-		_ = lblWork.SetText(fmt.Sprintf("%s: выполняется", what))
-		lblWork.SetTextColor(walk.RGB(128, 0, 0))
+		dafMainWindow.SetWorkStatus(ColorNavy, what+": выполняется")
 
 		go func() {
 			err := work()
 
 			_ = portHart.Port.Close()
 			_ = portDaf.Port.Close()
-			mainWindow.Synchronize(func() {
+			dafMainWindow.MainWindow.Synchronize(func() {
 				workStarted = false
 
 				gbCmd.SetVisible(true)
@@ -125,107 +137,36 @@ func runMainWindow() error {
 
 				pbCancelWork.SetVisible(false)
 				prodsMdl.SetInterrogatePlace(-1)
-				_ = lblWorkTime.SetText(time.Now().Format("15:04:05"))
+
 				if err != nil {
 					if merry.Is(err, context.Canceled) {
-						lblWork.SetTextColor(walk.RGB(139, 69, 19))
-						_ = lblWork.SetText(fmt.Sprintf("%s: прервано", what))
+						dafMainWindow.SetWorkStatus(walk.RGB(139, 69, 19), what+": прервано")
 					} else {
-						lblWork.SetTextColor(walk.RGB(255, 0, 0))
-						_ = lblWork.SetText(fmt.Sprintf("%s: %v", what, err))
+						dafMainWindow.SetWorkStatus(walk.RGB(255, 0, 0), what+": "+err.Error())
 						showErr(what, err.Error())
 					}
 
 				} else {
-					lblWork.SetTextColor(walk.RGB(0, 0, 128))
-					_ = lblWork.SetText(fmt.Sprintf("%s: выполнено", what))
+					dafMainWindow.SetWorkStatus(ColorNavy, what+": выполнено")
 				}
-
 			})
 		}()
 	}
 
-	menuWorks := []MenuItem{
-		Action{
-			Text: "Опрос",
+	actionWork := func(what string, f func() error) Action {
+		return Action{
+			Text: what,
 			OnTriggered: func() {
-				doWork("опрос", interrogateProducts)
+				doWork(what, f)
 			},
-		},
-		Action{
-			Text: "Настройка токового выхода",
-			OnTriggered: func() {
-				doWork("настройка токового выхода", setupCurrents)
-			},
-		},
-		Separator{},
-		Action{
-			Text: "отключить газ",
-			OnTriggered: func() {
-				doWork("отключить газ", func() error {
-					return switchGas(0)
-				})
-			},
-		},
-
-		Action{
-			Text: "задержка",
-			OnTriggered: func() {
-				doWork("некоторая задержка", func() error {
-
-					if err := delay("sdfsdf", time.Minute); err != nil {
-						return err
-					}
-
-					return delay("rtyrty", time.Minute)
-				})
-			},
-		},
-	}
-
-	for gas := data.Gas1; gas < 5; gas++ {
-		gas := gas
-		s := fmt.Sprintf("газ %d", gas)
-		menuWorks = append(menuWorks, Action{
-			Text: s,
-			OnTriggered: func() {
-				doWork(s, func() error {
-					return switchGas(gas)
-				})
-			},
-		})
+		}
 	}
 
 	prodValuesMdl := viewmodel.NewDafProductValuesTable()
-
-	validateProductValuesTable := func() {
-		n := tblViewProducts.CurrentIndex()
-		if n > -1 && n < prodsMdl.RowCount() {
-			prodValuesMdl.SetProduct(prodsMdl.ProductAt(n).ProductID)
-			if prodValuesMdl.RowCount() > 0 {
-				tblViewProductValues.SetVisible(true)
-				return
-			}
-		}
-		tblViewProductValues.SetVisible(false)
-	}
-
 	prodEntriesMdl := viewmodel.NewDafProductEntriesTable()
 
-	validateProductEntriesTable := func() {
-		n := tblViewProducts.CurrentIndex()
-		if n > -1 && n < prodsMdl.RowCount() {
-			prodEntriesMdl.SetProduct(prodsMdl.ProductAt(n).ProductID)
-			if prodEntriesMdl.RowCount() > 0 {
-				tblViewProductEntries.SetVisible(true)
-				return
-			}
-		}
-		tblViewProductEntries.SetVisible(false)
-	}
-
 	if err := (MainWindow{
-		AssignTo: &mainWindow,
+		AssignTo: &dafMainWindow.MainWindow,
 		Title: "ЭН8800-6408 Партия ДАФ-М " + (func() string {
 			p := data.GetLastParty()
 			return fmt.Sprintf("№%d %s", p.PartyID, p.CreatedAt.Format("02.01.2006"))
@@ -253,7 +194,7 @@ func runMainWindow() error {
 							Action{
 								Text: "Параметры",
 								OnTriggered: func() {
-									runPartyDialog(mainWindow)
+									runPartyDialog(dafMainWindow.MainWindow)
 								},
 							},
 							Action{
@@ -268,9 +209,31 @@ func runMainWindow() error {
 						},
 					},
 					SplitButton{
-						Text:      "Управление",
-						AssignTo:  &btnRun,
-						MenuItems: menuWorks,
+						Text:     "Управление",
+						AssignTo: &btnRun,
+						MenuItems: []MenuItem{
+							actionWork("Опрос", interrogateProducts),
+							actionWork("Настройка ДАФ-М", dafSetupMain),
+							Separator{},
+							actionWork("Настройка токового выхода", dafSetupCurrent),
+							actionWork("Установка порогов для настройки", dafSetupThresholdTest),
+							actionWork("Корректировка показаний", dafAdjust),
+							actionWork("Проверка диапазона измерений", dafTestMeasureRange),
+							actionWork("Проверка HART протокола", dafTestMeasureRange),
+							Separator{},
+							actionWork("Подать ПГС1", func() error { return switchGas(1) }),
+							actionWork("Подать ПГС2", func() error { return switchGas(2) }),
+							actionWork("Подать ПГС3", func() error { return switchGas(3) }),
+							actionWork("Подать ПГС4", func() error { return switchGas(4) }),
+							actionWork("Отключить газ", func() error { return switchGas(0) }),
+							actionWork("задержка", func() error {
+								if err := delay("sdfsdf", time.Minute); err != nil {
+									return err
+								}
+
+								return delay("rtyrty", time.Minute)
+							}),
+						},
 					},
 					PushButton{
 						AssignTo: &pbCancelWork,
@@ -281,60 +244,83 @@ func runMainWindow() error {
 					},
 
 					Label{
-						AssignTo:  &lblWorkTime,
+						AssignTo:  &dafMainWindow.lblWorkTime,
 						TextColor: walk.RGB(0, 128, 0),
 					},
 					Label{
-						AssignTo: &lblWork,
+						AssignTo: &dafMainWindow.lblWork,
 					},
-					delayProgress.Widget(),
+					dafMainWindow.DelayHelp.Widget(),
 				},
 			},
 			ScrollView{
 				Layout: HBox{MarginsZero: true, SpacingZero: true},
 				Children: []Widget{
-					TableView{
-						AssignTo:                 &tblViewProducts,
-						NotSortableByHeaderClick: true,
-						LastColumnStretched:      true,
-						CheckBoxes:               true,
-						Model:                    prodsMdl,
-						OnItemActivated: func() {
-							n := tblViewProducts.CurrentIndex()
-							if n < 0 || n >= prodsMdl.RowCount() {
-								return
-							}
-							runProductDialog(mainWindow, prodsMdl.ProductAt(n))
-							prodsMdl.PublishRowChanged(n)
+
+					GroupBox{
+						Layout: Grid{},
+						Title:  "Настраиваемые газоанализаторы ДАФ-М",
+						Children: []Widget{
+							TableView{
+								AssignTo:                 &tblViewProducts,
+								NotSortableByHeaderClick: true,
+								LastColumnStretched:      true,
+								CheckBoxes:               true,
+								Model:                    prodsMdl,
+								OnItemActivated: func() {
+									n := tblViewProducts.CurrentIndex()
+									if n < 0 || n >= prodsMdl.RowCount() {
+										return
+									}
+									runProductDialog(dafMainWindow.MainWindow, prodsMdl.ProductAt(n))
+									prodsMdl.PublishRowChanged(n)
+								},
+								OnKeyDown: func(key walk.Key) {
+									switch key {
+
+									case walk.KeyInsert:
+										m := prodsMdl
+										m.AddNewProduct()
+										runProductDialog(dafMainWindow.MainWindow, m.ProductAt(m.RowCount()-1))
+										prodsMdl.PublishRowChanged(m.RowCount() - 1)
+
+									case walk.KeyDelete:
+										n := tblViewProducts.CurrentIndex()
+										m := prodsMdl
+										if n < 0 || n >= m.RowCount() {
+											return
+										}
+										if err := data.DBProducts.Delete(m.ProductAt(n)); err != nil {
+											showErr("Ошибка данных", err.Error())
+										}
+										prodsMdl.Validate()
+									}
+
+								},
+								OnCurrentIndexChanged: func() {
+									n := tblViewProducts.CurrentIndex()
+									if n > -1 && n < prodsMdl.RowCount() {
+										p := prodsMdl.ProductAt(n)
+										s := fmt.Sprintf("ДАФ-М № %d, заводской номер %d, адрес %d", p.ProductID, p.Serial, p.Addr)
+										_ = gbProductValues.SetTitle("Паспорт " + s)
+										_ = gbProductEntries.SetTitle("Журнал " + s)
+
+										prodValuesMdl.SetProduct(prodsMdl.ProductAt(n).ProductID)
+										prodEntriesMdl.SetProduct(prodsMdl.ProductAt(n).ProductID)
+
+										gbProductValues.SetVisible(prodValuesMdl.RowCount() > 0)
+										gbProductEntries.SetVisible(prodEntriesMdl.RowCount() > 0)
+
+										return
+									}
+
+									gbProductValues.SetVisible(false)
+									gbProductEntries.SetVisible(false)
+								},
+
+								Columns: viewmodel.ProductColumns,
+							},
 						},
-						OnKeyDown: func(key walk.Key) {
-							switch key {
-
-							case walk.KeyInsert:
-								m := prodsMdl
-								m.AddNewProduct()
-								runProductDialog(mainWindow, m.ProductAt(m.RowCount()-1))
-								prodsMdl.PublishRowChanged(m.RowCount() - 1)
-
-							case walk.KeyDelete:
-								n := tblViewProducts.CurrentIndex()
-								m := prodsMdl
-								if n < 0 || n >= m.RowCount() {
-									return
-								}
-								if err := data.DBProducts.Delete(m.ProductAt(n)); err != nil {
-									showErr("Ошибка данных", err.Error())
-								}
-								prodsMdl.Validate()
-							}
-
-						},
-						OnCurrentIndexChanged: func() {
-							validateProductValuesTable()
-							validateProductEntriesTable()
-						},
-
-						Columns: viewmodel.ProductColumns,
 					},
 					ScrollView{
 						HorizontalFixed: true,
@@ -367,7 +353,7 @@ func runMainWindow() error {
 										cmd := modbus.DevCmd(neCmd.Value())
 										arg := neArg.Value()
 										doWork(fmt.Sprintf("Оправка команды %d,%v", cmd, arg), func() error {
-											return sendCmd(cmd, arg)
+											return dafSendCmdToEachOkProduct(cmd, arg)
 										})
 									}},
 								},
@@ -377,21 +363,37 @@ func runMainWindow() error {
 				},
 			},
 			Composite{
-				Layout: HBox{SpacingZero: true, MarginsZero: true},
+				Layout: HBox{},
 				Children: []Widget{
-					TableView{
-						AssignTo:                 &tblViewProductValues,
-						NotSortableByHeaderClick: true,
-						LastColumnStretched:      true,
-						Model:                    prodValuesMdl,
-						Columns:                  viewmodel.ProductValueColumns,
+
+					GroupBox{
+						AssignTo: &gbProductValues,
+						Layout:   Grid{},
+						Title:    "Паспорт",
+						Children: []Widget{
+							TableView{
+								AssignTo:                 &tblViewProductValues,
+								NotSortableByHeaderClick: true,
+								LastColumnStretched:      true,
+								Model:                    prodValuesMdl,
+								Columns:                  viewmodel.ProductValueColumns,
+							},
+						},
 					},
-					TableView{
-						AssignTo:                 &tblViewProductEntries,
-						NotSortableByHeaderClick: true,
-						LastColumnStretched:      true,
-						Model:                    prodEntriesMdl,
-						Columns:                  viewmodel.ProductEntryColumns,
+
+					GroupBox{
+						AssignTo: &gbProductEntries,
+						Layout:   Grid{},
+						Title:    "Журнал",
+						Children: []Widget{
+							TableView{
+								AssignTo:                 &tblViewProductEntries,
+								NotSortableByHeaderClick: true,
+								LastColumnStretched:      true,
+								Model:                    prodEntriesMdl,
+								Columns:                  viewmodel.ProductEntryColumns,
+							},
+						},
 					},
 				},
 			},
@@ -402,7 +404,7 @@ func runMainWindow() error {
 
 	pbCancelWork.SetVisible(false)
 	prodsMdl.Validate()
-	mainWindow.Run()
+	dafMainWindow.MainWindow.Run()
 
 	if err := settings.Save(); err != nil {
 		return err
@@ -498,3 +500,20 @@ func runProductDialog(owner walk.Form, p *data.Product) {
 	saveOnEdit = true
 	dlg.Run()
 }
+
+func getComports() []string {
+	ports, _ := comport.AvailablePorts()
+	return ports
+}
+
+func comportIndex(portName string) int {
+	ports, _ := comport.AvailablePorts()
+	for i, s := range ports {
+		if s == portName {
+			return i
+		}
+	}
+	return -1
+}
+
+var ColorNavy = walk.RGB(0, 0, 128)

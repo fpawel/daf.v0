@@ -12,7 +12,7 @@ type ProductEntry struct {
 	ProductEntryID int64     `reform:"product_entry_id,pk"`
 	ProductID      int64     `reform:"product_id"`
 	CreatedAt      time.Time `reform:"created_at"`
-	Name           string    `reform:"name"`
+	WorkName       string    `reform:"work_name"`
 	Ok             bool      `reform:"ok"`
 	Message        string    `reform:"message"`
 }

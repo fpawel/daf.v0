@@ -126,6 +126,17 @@ l1:
 	m.Validate()
 }
 
+func (m *DafProductsTable) SetDafConcentration(place int, v float64) {
+	if m.items[place].Daf == nil {
+		m.items[place].Daf = new(DafValue)
+	}
+	m.items[place].Daf.Concentration = v
+	m.items[place].Connection = &Connection{true, fmt.Sprintf("концентрация=%v", v)}
+	m.synchronize(func() {
+		m.PublishRowChanged(place)
+	})
+}
+
 func (m *DafProductsTable) SetDafValue(place int, v DafValue) {
 	m.items[place].Daf = &v
 	m.items[place].Connection = &Connection{true, v.String()}
@@ -282,8 +293,7 @@ func (m *DafProductsTable) Checked(index int) bool {
 
 func (m *DafProductsTable) SetChecked(index int, checked bool) error {
 	m.items[index].Checked = checked
-	_, err := data.DBProducts.Exec(`UPDATE product SET checked = ? WHERE product_id = ?`, checked, m.items[index].ProductID)
-	return err
+	return nil
 }
 
 type ProductColumn int
