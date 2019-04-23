@@ -184,6 +184,11 @@ func dafTestMeasureRange() error {
 			if err != nil {
 				return nil
 			}
+
+			data.DBxProducts.MustExec(
+				`DELETE FROM product_value WHERE product_id = ? AND work_index = ?`,
+				p.ProductID, n)
+
 			value := data.ProductValue{
 				ProductID:     p.ProductID,
 				Gas:           gas,
@@ -196,10 +201,6 @@ func dafTestMeasureRange() error {
 				Mode:          dv.Mode,
 				FailureCode:   dv.Failure,
 			}
-
-			data.DBxProducts.MustExec(
-				`DELETE FROM product_value WHERE product_id = ? AND name = ? AND work_index = ?`,
-				p.ProductID, "диапазон измерений", n)
 
 			if err := data.DBProducts.Save(&value); err != nil {
 				panic(err)

@@ -7,6 +7,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"gopkg.in/reform.v1"
 	"gopkg.in/reform.v1/dialects/sqlite3"
+	"log"
+	"os/exec"
 	"path/filepath"
 	"time"
 )
@@ -117,18 +119,30 @@ var (
 	DBProducts  *reform.DB
 )
 
-func init() {
-
+func dataFolder() string {
 	dataFolder, err := winapp.AppDataFolderPath()
 	if err != nil {
 		panic(err)
 	}
-	dataFolder = filepath.Join(dataFolder, "daf")
-	err = winapp.EnsuredDirectory(dataFolder)
-	if err != nil {
+	return filepath.Join(dataFolder, "daf")
+}
+
+func ShowDataFolder(){
+	if err := exec.Command("Explorer.exe", dataFolder()).Start(); err != nil {
+		panic(err)
+	}
+}
+
+func init() {
+
+	dataFolder := dataFolder()
+
+	if err := winapp.EnsuredDirectory(dataFolder); err != nil {
 		panic(err)
 	}
 	fileName := filepath.Join(dataFolder, "daf.sqlite")
+
+	log.Println("data:", fileName)
 
 	conn, err := sql.Open("sqlite3", fileName)
 	if err != nil {

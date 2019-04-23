@@ -45,14 +45,13 @@ CREATE TABLE IF NOT EXISTS product_value
     created_at       TIMESTAMP           NOT NULL DEFAULT (datetime('now')),
     work_index       INTEGER             NOT NULL CHECK ( work_index >= 0),
     gas              INTEGER             NOT NULL CHECK ( gas IN (1, 2, 3, 4) ),
-    name             TEXT                NOT NULL,
     concentration    REAL                NOT NULL,
     current          REAL                NOT NULL,
     threshold1       BOOLEAN             NOT NULL,
     threshold2       BOOLEAN             NOT NULL,
     mode             INTEGER             NOT NULL,
     failure_code     REAL                NOT NULL,
-    UNIQUE (product_id, name, work_index),
+    UNIQUE (product_id, work_index),
     FOREIGN KEY (product_id) REFERENCES product (product_id) ON DELETE CASCADE
 );
 

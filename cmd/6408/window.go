@@ -188,7 +188,14 @@ func runMainWindow() error {
 							Action{
 								Text: "Создать новую",
 								OnTriggered: func() {
+									if walk.MsgBox(dafMainWindow.MainWindow, "Новая партия",
+										"Подтвердите необходимость создания новой партии",
+										walk.MsgBoxIconQuestion | walk.MsgBoxYesNo) != win.IDYES {
+										return
+									}
 
+									data.CreateNewParty()
+									prodsMdl.Validate()
 								},
 							},
 							Action{
@@ -205,6 +212,11 @@ func runMainWindow() error {
 								OnTriggered: func() {
 									prodsMdl.AddNewProduct()
 								},
+							},
+							Separator{},
+							Action{
+								Text: "Перейти в каталог с данными",
+								OnTriggered: data.ShowDataFolder,
 							},
 						},
 					},
@@ -226,13 +238,6 @@ func runMainWindow() error {
 							actionWork("Подать ПГС3", func() error { return switchGas(3) }),
 							actionWork("Подать ПГС4", func() error { return switchGas(4) }),
 							actionWork("Отключить газ", func() error { return switchGas(0) }),
-							actionWork("задержка", func() error {
-								if err := delay("sdfsdf", time.Minute); err != nil {
-									return err
-								}
-
-								return delay("rtyrty", time.Minute)
-							}),
 						},
 					},
 					PushButton{
