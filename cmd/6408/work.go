@@ -67,6 +67,9 @@ func blowGas(gas data.Gas) error {
 	if gas == 1 {
 		t = 10 * time.Minute
 	}
+	//
+	t = time.Second * 20
+	//
 	return delay(fmt.Sprintf("продувка ПГС%d", gas), t)
 }
 
@@ -326,18 +329,16 @@ func delay(what string, total time.Duration) error {
 			}
 		}
 
-		func() {
-			timer := time.NewTimer(5 * time.Second)
-			for {
-				select {
-				case <-timer.C:
-					return
-				case <-ctxDelay.Done():
-					timer.Stop()
-					return
-				}
+		timer := time.NewTimer(5 * time.Second)
+		for {
+			select {
+			case <-timer.C:
+				break
+			case <-ctxDelay.Done():
+				timer.Stop()
+				return nil
 			}
-		}()
+		}
 
 	}
 }

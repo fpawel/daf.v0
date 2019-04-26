@@ -16,6 +16,7 @@ func (x colorStdOutWriter) Write(p []byte) (int, error) {
 	var (
 		msg, time, fields, fileLine string
 	)
+	lev := "???"
 	c := color.New(color.FgWhite)
 	for d.ScanRecord() {
 		for d.ScanKeyval() {
@@ -32,10 +33,17 @@ func (x colorStdOutWriter) Write(p []byte) (int, error) {
 				switch value {
 				case "error", "panic", "fatal":
 					c = color.New(color.FgHiRed, color.Bold)
+					lev = "ERR"
 				case "warn", "warning":
 					c = color.New(color.FgHiMagenta, color.Bold)
+					lev = "WRN"
 				case "info":
 					c = color.New(color.FgHiWhite, color.Bold)
+					lev = "INF"
+				case "debug":
+					c = color.New(color.FgWhite)
+					lev = "DBG"
+
 				}
 			case "func":
 
@@ -48,6 +56,8 @@ func (x colorStdOutWriter) Write(p []byte) (int, error) {
 		msg += " " + fields
 	}
 	_, _ = color.New(color.FgGreen).Fprint(color.Output, time+" ")
+	_, _ = c.Fprint(color.Output, lev+" ")
 	_, _ = color.New(color.FgCyan).Fprint(color.Output, fileLine+"\t")
+
 	return c.Fprintln(color.Output, msg)
 }
