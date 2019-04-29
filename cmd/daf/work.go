@@ -13,6 +13,7 @@ import (
 	"github.com/fpawel/serial"
 	"github.com/hako/durafmt"
 	"github.com/lxn/walk"
+	"github.com/powerman/structlog"
 	"github.com/sirupsen/logrus"
 	"time"
 )
@@ -345,12 +346,19 @@ func delay(what string, total time.Duration) error {
 
 func onPlaceConnectionError(place int, err error) {
 	p := prodsMdl.ProductAt(place)
-	logrus.Errorf("место %d, адрес %d, серийный номер %d, ID %d: %v",
-		place+1, p.Addr, p.Serial, p.ProductID, err)
 	prodsMdl.SetConnectionErrorAt(place, err)
 	if currentWorkName != "" {
 		data.WriteProductError(p.ProductID, currentWorkName, err)
 	}
+
+	log.PrintErr(err,
+		structlog.KeyTime, now(),
+		structlog.KeySource, structlog.Auto,
+		"место", place+1,
+		"адрес", p.Addr,
+		"заводской_номер", p.Serial,
+		"product_id", p.ProductID,
+	)
 }
 
 func setCurrentWorkName(workName string) {
@@ -367,9 +375,7 @@ var (
 	currentWorkName string
 
 	portDaf = port{
-		Port: comport.NewPort("стенд", serial.Config{Baud: 9600}, func(entry comport.Entry) {
-			logrus.Debugln(entry)
-		}),
+		Port: comport.NewPort("стенд", serial.Config{Baud: 9600}),
 		Config: comm.Config{
 			ReadByteTimeoutMillis: 50,
 			ReadTimeoutMillis:     1000,
@@ -383,8 +389,6 @@ var (
 			ReadTimeout: time.Millisecond,
 			Parity:      serial.ParityOdd,
 			StopBits:    serial.Stop1,
-		}, func(entry comport.Entry) {
-			logrus.Debugln(entry)
 		}),
 		Config: comm.Config{
 			ReadByteTimeoutMillis: 50,

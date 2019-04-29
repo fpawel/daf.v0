@@ -28,11 +28,8 @@ func EN6408SetConnectionLine(place int, connLine EN6408ConnectionLine) error {
 		ProtoCmd: 0x10,
 		Data:     []byte{0, byte(place), 0, 1, 2, 0, byte(connLine)},
 	}
-	_, err := portDaf.GetResponse(req.Bytes(), func(_, response []byte) error {
-		return req.CheckResponse(response)
-	})
+	_, err := req.GetResponse(portDaf, nil)
 	if err != nil {
-
 		return ErrEN6408.Appendf("место %d: выбор линии связи %d: %v", place+1, connLine, err)
 	}
 	return err
@@ -45,26 +42,21 @@ func EN6408Read(place int) (*viewmodel.DafValue6408, error) {
 		prodsMdl.SetInterrogatePlace(-1)
 	}()
 
-	value, addr := func() (*viewmodel.DafValue6408, error) {
+	addr := prodsMdl.ProductAt(place).Addr
+	b, err := modbus.Read3(portDaf, 32, modbus.Var(addr-1)*2, 2, func(_, _ []byte) error {
+		return nil
+	})
+	if err != nil {
+		return nil, ErrEN6408.Appendf("опрос места %d: %+v", place+1, err)
+	}
+	b = b[3:]
+	v := new(viewmodel.DafValue6408)
+	v.Current = (float64(b[0])*256 + float64(b[1])) / 100
+	v.Threshold1 = b[3]&1 == 0
+	v.Threshold2 = b[3]&2 == 0
+	prodsMdl.Set6408Value(place, *v)
 
-		addr := prodsMdl.ProductAt(place).Addr
-		b, err := modbus.Read3(portDaf, 32, modbus.Var(addr-1)*2, 2, func(_, _ []byte) error {
-			return nil
-		})
-		if err != nil {
-			return nil, ErrEN6408.Appendf("опрос места %d: %+v", place+1, err)
-		}
-		b = b[3:]
-		v := new(viewmodel.DafValue6408)
-		v.Current = (float64(b[0])*256 + float64(b[1])) / 100
-		v.Threshold1 = b[3]&1 == 0
-		v.Threshold2 = b[3]&2 == 0
-		prodsMdl.Set6408Value(place, *v)
-		return v, nil
-	}()
-
-	structlog.DefaultLogger.Info("ЭН6408: опрос места",
-		KeyPlace, place, KeyEN6408, *v)
+	structlog.DefaultLogger.Info("ЭН6408: опрос места", KeyPlace, place, KeyEN6408, *v)
 
 	return v, nil
 }
@@ -76,11 +68,7 @@ func switchGas(gas data.Gas) error {
 		ProtoCmd: 0x10,
 		Data:     []byte{0, 32, 0, 1, 2, 0, byte(gas)},
 	}
-	_, err := portDaf.GetResponse(req.Bytes(), func(_, response []byte) error {
-		return req.CheckResponse(response)
-	})
-
-	if err != nil {
+	if _, err := req.GetResponse(portDaf, nil); err != nil {
 		return ErrGasBlock.Appendf("клапан %d: %v", gas, err)
 	}
 	return nil
