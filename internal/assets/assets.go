@@ -6,34 +6,7 @@ import (
 	"image"
 	_ "image/png"
 	"log"
-	"os"
-	"path/filepath"
 )
-
-func EnsureManifestFile() {
-
-	fileName := filepath.Base(os.Args[0])
-	fileName = filepath.Join(filepath.Dir(os.Args[0]), fileName+".manifest")
-	if _, err := os.Stat(fileName); !os.IsNotExist(err) {
-		return
-	}
-
-	file, err := os.Create(fileName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	b, err := Asset("assets/exe.manifest")
-	if err != nil {
-		log.Fatal(err)
-	}
-	if _, err := file.Write(b); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := file.Close(); err != nil {
-		log.Fatal(err)
-	}
-}
 
 var (
 	ImgPinOn     = Image("assets/png16/pin_on.png")

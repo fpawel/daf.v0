@@ -5,7 +5,7 @@ import (
 	"github.com/hako/durafmt"
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
-	"github.com/sirupsen/logrus"
+	"github.com/powerman/structlog"
 	"time"
 )
 
@@ -18,6 +18,9 @@ type delayHelp struct {
 }
 
 func (x *delayHelp) Show(what string, total time.Duration) {
+
+	log := structlog.New("delay", what)
+
 	startMoment := time.Now()
 	x.done = make(chan struct{}, 1)
 	x.ticker = time.NewTicker(time.Millisecond * 500)
@@ -27,9 +30,11 @@ func (x *delayHelp) Show(what string, total time.Duration) {
 		x.pb.SetValue(0)
 		_ = x.lbl.SetText(fmt.Sprintf("%s: %s", what, durafmt.Parse(total)))
 	})
+
+	log.Info("begin", structlog.KeyTime, now())
 	go func() {
 		defer func() {
-			logrus.Debugln("timer closed")
+			log.Info("end", structlog.KeyTime, now())
 		}()
 		for {
 			select {

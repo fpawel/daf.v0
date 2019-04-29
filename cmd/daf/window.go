@@ -11,7 +11,6 @@ import (
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 	"github.com/lxn/win"
-	"log"
 	"math"
 	"time"
 )
@@ -177,6 +176,24 @@ func runMainWindow() error {
 		Size:       Size{800, 600},
 		Layout:     VBox{},
 
+		MenuItems: []MenuItem{
+			Menu{
+				Text: "Окно",
+				Items: []MenuItem{
+					Action{
+						Text: "Консоль",
+						OnTriggered: func() {
+							formConsoleShow()
+							//formConsoleNewLine(DBG, "дебаг")
+							//formConsoleNewLine(INF, "инфа")
+							//formConsoleNewLine(ERR, "ошибочка")
+							//formConsoleNewLine(WRN, "варнинг")
+						},
+					},
+				},
+			},
+		},
+
 		Children: []Widget{
 			ScrollView{
 				VerticalFixed: true,
@@ -190,7 +207,7 @@ func runMainWindow() error {
 								OnTriggered: func() {
 									if walk.MsgBox(dafMainWindow.MainWindow, "Новая партия",
 										"Подтвердите необходимость создания новой партии",
-										walk.MsgBoxIconQuestion | walk.MsgBoxYesNo) != win.IDYES {
+										walk.MsgBoxIconQuestion|walk.MsgBoxYesNo) != win.IDYES {
 										return
 									}
 
@@ -212,11 +229,6 @@ func runMainWindow() error {
 								OnTriggered: func() {
 									prodsMdl.AddNewProduct()
 								},
-							},
-							Separator{},
-							Action{
-								Text: "Перейти в каталог с данными",
-								OnTriggered: data.ShowDataFolder,
 							},
 						},
 					},
@@ -409,6 +421,7 @@ func runMainWindow() error {
 
 	pbCancelWork.SetVisible(false)
 	prodsMdl.Validate()
+
 	dafMainWindow.MainWindow.Run()
 
 	if err := settings.Save(); err != nil {

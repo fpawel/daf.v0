@@ -2,13 +2,12 @@ package data
 
 import (
 	"database/sql"
-	"github.com/fpawel/elco/pkg/winapp"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/powerman/structlog"
 	"gopkg.in/reform.v1"
 	"gopkg.in/reform.v1/dialects/sqlite3"
-	"log"
-	"os/exec"
+	"os"
 	"path/filepath"
 	"time"
 )
@@ -117,32 +116,14 @@ func WriteProductEntry(productID int64, workName string, ok bool, message string
 var (
 	DBxProducts *sqlx.DB
 	DBProducts  *reform.DB
+	log         = structlog.New()
 )
 
-func dataFolder() string {
-	dataFolder, err := winapp.AppDataFolderPath()
-	if err != nil {
-		panic(err)
-	}
-	return filepath.Join(dataFolder, "daf")
-}
+func Open() {
 
-func ShowDataFolder(){
-	if err := exec.Command("Explorer.exe", dataFolder()).Start(); err != nil {
-		panic(err)
-	}
-}
+	fileName := filepath.Join(filepath.Dir(os.Args[0]), "daf.sqlite")
 
-func init() {
-
-	dataFolder := dataFolder()
-
-	if err := winapp.EnsuredDirectory(dataFolder); err != nil {
-		panic(err)
-	}
-	fileName := filepath.Join(dataFolder, "daf.sqlite")
-
-	log.Println("data:", fileName)
+	log.Info("open", "file", fileName, structlog.KeyTime, time.Now().Format("15:04:05"))
 
 	conn, err := sql.Open("sqlite3", fileName)
 	if err != nil {
