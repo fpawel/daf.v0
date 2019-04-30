@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/ansel1/merry"
+	"github.com/fpawel/comm/comport"
+	"github.com/fpawel/comm/modbus"
 	"github.com/fpawel/daf/internal/data"
 	"github.com/fpawel/daf/internal/viewmodel"
-	"github.com/fpawel/elco/pkg/serial-comm/comport"
-	"github.com/fpawel/elco/pkg/serial-comm/modbus"
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 	"github.com/lxn/win"
@@ -126,8 +126,8 @@ func runMainWindow() error {
 		go func() {
 			err := work()
 
-			_ = portHart.Port.Close()
-			_ = portDaf.Port.Close()
+			_ = portHart.Close()
+			_ = portDaf.Close()
 			dafMainWindow.MainWindow.Synchronize(func() {
 				workStarted = false
 
@@ -520,12 +520,12 @@ func runProductDialog(owner walk.Form, p *data.Product) {
 }
 
 func getComports() []string {
-	ports, _ := comport.AvailablePorts()
+	ports, _ := comport.Ports()
 	return ports
 }
 
 func comportIndex(portName string) int {
-	ports, _ := comport.AvailablePorts()
+	ports, _ := comport.Ports()
 	for i, s := range ports {
 		if s == portName {
 			return i

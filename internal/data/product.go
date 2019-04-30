@@ -1,7 +1,7 @@
 package data
 
 import (
-	"github.com/fpawel/elco/pkg/serial-comm/modbus"
+	"github.com/fpawel/comm/modbus"
 	"time"
 )
 

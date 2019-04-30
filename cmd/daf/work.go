@@ -5,16 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ansel1/merry"
+	"github.com/fpawel/comm"
+	"github.com/fpawel/comm/comport"
+	"github.com/fpawel/comm/modbus"
 	"github.com/fpawel/daf/internal/data"
 	"github.com/fpawel/daf/internal/viewmodel"
-	"github.com/fpawel/elco/pkg/serial-comm/comm"
-	"github.com/fpawel/elco/pkg/serial-comm/comport"
-	"github.com/fpawel/elco/pkg/serial-comm/modbus"
-	"github.com/fpawel/serial"
 	"github.com/hako/durafmt"
 	"github.com/lxn/walk"
 	"github.com/powerman/structlog"
-	"github.com/sirupsen/logrus"
 	"time"
 )
 
@@ -46,10 +44,10 @@ func dafSendCmdToEachOkProduct(cmd modbus.DevCmd, arg float64) error {
 		fmt.Sprintf("отправка команды %X, %v", cmd, arg))
 
 	if cmd == 5 {
-		if err := portDaf.open(); err != nil {
+		if err := portDaf.ensureOpened(); err != nil {
 			return err
 		}
-		_, err := portDaf.Port.Write(modbus.Write32BCDRequest(0, 0x10, cmd, arg).Bytes())
+		_, err := portDaf.Reader.Write(modbus.Write32BCDRequest(0, 0x10, cmd, arg).Bytes())
 		return err
 	}
 
@@ -206,10 +204,16 @@ func dafTestMeasureRange() error {
 				FailureCode:   dv.Failure,
 			}
 
+			log.Info("сохранение для паспорта",
+				"место", p.Place,
+				"адрес", p.Addr,
+				"заводской_номер", p.Serial,
+				"значение", fmt.Sprintf("%+v", value),
+			)
+
 			if err := data.DBProducts.Save(&value); err != nil {
 				panic(err)
 			}
-			logrus.Infof("сохранено значение: место %d, адрес %d: %v", p.Place, p.Addr, value)
 
 			return nil
 
@@ -263,30 +267,36 @@ func interrogateProducts() error {
 	}
 }
 
-type port struct {
-	Port     *comport.Port
+type reader struct {
+	*comport.Reader
+	comm.Config
 	PortName string
-	Config   comm.Config
 }
 
-func (x port) open() error {
-	if x.Port.Opened() {
-		return nil
-	}
-	return x.Port.Open(x.PortName)
-}
-
-func (x port) GetResponse(request []byte, prs comm.ResponseParser) ([]byte, error) {
-	if err := x.open(); err != nil {
+func (x reader) GetResponse(request []byte, prs comm.ResponseParser) ([]byte, error) {
+	if err := x.ensureOpened(); err != nil {
 		return nil, err
 	}
-	return x.Port.GetResponse(request, x.Config, comportContext, prs)
+	return x.Reader.GetResponse(request, x.Config, comportContext, prs)
+}
+
+func (x reader) ensureOpened() error {
+	if x.Reader.Opened() {
+		return nil
+	}
+	return x.Reader.Open(x.PortName)
 }
 
 func sleep(t time.Duration) {
-	logrus.Infoln("пауза", durafmt.Parse(t))
+	log.Info("начало паузы",
+		"duration", durafmt.Parse(t),
+		structlog.KeyTime, now(),
+	)
 	defer func() {
-		logrus.Infoln("окончание паузы", durafmt.Parse(t))
+		log.Info("окончание паузы",
+			"duration", durafmt.Parse(t),
+			structlog.KeyTime, now(),
+		)
 	}()
 	timer := time.NewTimer(t)
 	defer timer.Stop()
@@ -314,8 +324,13 @@ func delay(what string, total time.Duration) error {
 
 	skipDelay = func() {
 		doSkipDelay()
-		logrus.Warnf("%s %s: задержка прервана: %s", what, durafmt.Parse(total),
-			durafmt.Parse(time.Since(startMoment)))
+
+		log.Warn("задержка прервана",
+			structlog.KeyTime, now(),
+			"duration", durafmt.Parse(total),
+			"elapsed", durafmt.Parse(time.Since(startMoment)),
+			"what", what,
+		)
 	}
 	dafMainWindow.DelayHelp.Show(what, total)
 
@@ -353,7 +368,6 @@ func onPlaceConnectionError(place int, err error) {
 
 	log.PrintErr(err,
 		structlog.KeyTime, now(),
-		structlog.KeySource, structlog.Auto,
 		"место", place+1,
 		"адрес", p.Addr,
 		"заводской_номер", p.Serial,
@@ -374,8 +388,8 @@ var (
 	prodsMdl        *viewmodel.DafProductsTable
 	currentWorkName string
 
-	portDaf = port{
-		Port: comport.NewPort("стенд", serial.Config{Baud: 9600}),
+	portDaf = reader{
+		Reader: comport.NewReader(comport.Config{Baud: 9600}, "стенд"),
 		Config: comm.Config{
 			ReadByteTimeoutMillis: 50,
 			ReadTimeoutMillis:     1000,
@@ -383,13 +397,13 @@ var (
 		},
 	}
 
-	portHart = port{
-		Port: comport.NewPort("hart", serial.Config{
+	portHart = reader{
+		Reader: comport.NewReader(comport.Config{
 			Baud:        1200,
 			ReadTimeout: time.Millisecond,
-			Parity:      serial.ParityOdd,
-			StopBits:    serial.Stop1,
-		}),
+			Parity:      comport.ParityOdd,
+			StopBits:    comport.Stop1,
+		}, "hart"),
 		Config: comm.Config{
 			ReadByteTimeoutMillis: 50,
 			ReadTimeoutMillis:     2000,

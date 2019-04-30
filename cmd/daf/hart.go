@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"github.com/ansel1/merry"
-	"github.com/fpawel/elco/pkg/serial-comm/comm"
+	"github.com/fpawel/comm"
 	"github.com/sirupsen/logrus"
 )
 

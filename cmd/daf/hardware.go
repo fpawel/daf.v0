@@ -1,10 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"github.com/ansel1/merry"
+	"github.com/fpawel/comm/modbus"
 	"github.com/fpawel/daf/internal/data"
 	"github.com/fpawel/daf/internal/viewmodel"
-	"github.com/fpawel/elco/pkg/serial-comm/modbus"
 	"github.com/powerman/structlog"
 	"github.com/sirupsen/logrus"
 )
@@ -105,6 +106,13 @@ func dafReadAtPlace(place int) (v viewmodel.DafValue, err error) {
 
 	if err == nil {
 		logrus.Debugf("место %d, адрес %d: %v", place+1, addr, v)
+
+		log.Debug(fmt.Sprintf("%+v", v),
+			structlog.KeyTime, now(),
+			"место", place+1,
+			"адрес", addr,
+		)
+
 		prodsMdl.SetDafValue(place, v)
 	}
 	if isDeviceError(err) {
