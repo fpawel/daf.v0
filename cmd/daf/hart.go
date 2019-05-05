@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"github.com/ansel1/merry"
 	"github.com/fpawel/comm"
+	"github.com/powerman/structlog"
 	"github.com/sirupsen/logrus"
+	"strconv"
 )
 
 func testHart(p *Product) error {
@@ -79,8 +81,10 @@ func hartInit() ([]byte, error) {
 
 func hartGetResponse(req []byte, parse func([]byte) error) ([]byte, error) {
 	offset := 0
-	response, err := portHart.GetResponse(req, func(_, response []byte) (err error) {
+	log := withKeys(structlog.New(), "hart", "")
+	response, err := portHart.GetResponse(log, req, func(_, response []byte) (s string, err error) {
 		offset, err = parseHart(response, parse)
+		s = strconv.Itoa(offset)
 		return
 	})
 	return response[offset:], err

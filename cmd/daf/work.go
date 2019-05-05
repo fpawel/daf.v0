@@ -204,7 +204,7 @@ func dafTestMeasureRange() error {
 				FailureCode:   dv.Failure,
 			}
 
-			log.Info("сохранение для паспорта",
+			structlog.New().Info("сохранение для паспорта",
 				"место", p.Place,
 				"адрес", p.Addr,
 				"заводской_номер", p.Serial,
@@ -273,11 +273,16 @@ type reader struct {
 	PortName string
 }
 
-func (x reader) GetResponse(request []byte, prs comm.ResponseParser) ([]byte, error) {
+func (x reader) GetResponse(logger *structlog.Logger, bytes []byte, responseParser comm.ResponseParser) ([]byte, error) {
 	if err := x.ensureOpened(); err != nil {
 		return nil, err
 	}
-	return x.Reader.GetResponse(request, x.Config, comportContext, prs)
+	return x.Reader.GetResponse(comm.Request{
+		Logger:         logger,
+		Bytes:          bytes,
+		Config:         x.Config,
+		ResponseParser: responseParser,
+	}, comportContext)
 }
 
 func (x reader) ensureOpened() error {
@@ -288,15 +293,11 @@ func (x reader) ensureOpened() error {
 }
 
 func sleep(t time.Duration) {
-	log.Info("начало паузы",
-		"duration", durafmt.Parse(t),
-		structlog.KeyTime, now(),
-	)
+	log := withKeys(structlog.New(), "duration", durafmt.Parse(t))
+
+	log.Info("начало паузы", structlog.KeyTime, now())
 	defer func() {
-		log.Info("окончание паузы",
-			"duration", durafmt.Parse(t),
-			structlog.KeyTime, now(),
-		)
+		log.Info("окончание паузы", structlog.KeyTime, now())
 	}()
 	timer := time.NewTimer(t)
 	defer timer.Stop()
@@ -312,6 +313,8 @@ func sleep(t time.Duration) {
 
 func delay(what string, total time.Duration) error {
 
+	log := withKeys(structlog.New(), "duration", durafmt.Parse(total), "what", what)
+
 	originalComportContext := comportContext
 	ctxDelay, doSkipDelay := context.WithTimeout(comportContext, total)
 	comportContext = ctxDelay
@@ -324,15 +327,17 @@ func delay(what string, total time.Duration) error {
 
 	skipDelay = func() {
 		doSkipDelay()
-
-		log.Warn("задержка прервана",
-			structlog.KeyTime, now(),
-			"duration", durafmt.Parse(total),
-			"elapsed", durafmt.Parse(time.Since(startMoment)),
-			"what", what,
-		)
+		log.Warn("задержка прервана", structlog.KeyTime, now())
 	}
 	dafMainWindow.DelayHelp.Show(what, total)
+
+	log.Info("начало задержки", structlog.KeyTime, now())
+	defer func() {
+		log.Info("окончание задержки",
+			structlog.KeyTime, now(),
+			"elapsed", durafmt.Parse(time.Since(startMoment)),
+		)
+	}()
 
 	for {
 		for _, p := range prodsMdl.OkProducts() {
@@ -365,14 +370,6 @@ func onPlaceConnectionError(place int, err error) {
 	if currentWorkName != "" {
 		data.WriteProductError(p.ProductID, currentWorkName, err)
 	}
-
-	log.PrintErr(err,
-		structlog.KeyTime, now(),
-		"место", place+1,
-		"адрес", p.Addr,
-		"заводской_номер", p.Serial,
-		"product_id", p.ProductID,
-	)
 }
 
 func setCurrentWorkName(workName string) {
@@ -389,7 +386,7 @@ var (
 	currentWorkName string
 
 	portDaf = reader{
-		Reader: comport.NewReader(comport.Config{Baud: 9600}, "стенд"),
+		Reader: comport.NewReader(comport.Config{Baud: 9600}),
 		Config: comm.Config{
 			ReadByteTimeoutMillis: 50,
 			ReadTimeoutMillis:     1000,
@@ -403,7 +400,7 @@ var (
 			ReadTimeout: time.Millisecond,
 			Parity:      comport.ParityOdd,
 			StopBits:    comport.Stop1,
-		}, "hart"),
+		}),
 		Config: comm.Config{
 			ReadByteTimeoutMillis: 50,
 			ReadTimeoutMillis:     2000,

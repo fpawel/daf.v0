@@ -29,9 +29,12 @@ func EN6408SetConnectionLine(place int, connLine EN6408ConnectionLine) error {
 		ProtoCmd: 0x10,
 		Data:     []byte{0, byte(place), 0, 1, 2, 0, byte(connLine)},
 	}
-	_, err := req.GetResponse(portDaf, nil)
+
+	_, err := req.GetResponse(
+		withKeys(structlog.New(), "ЭН6408", "установка линии связи", "линия", connLine, "место", place+1),
+		portDaf, nil)
 	if err != nil {
-		return ErrEN6408.Appendf("место %d: выбор линии связи %d: %v", place+1, connLine, err)
+		err = ErrEN6408.Appendf("место %d: установка линии связи %d: %+v", place+1, connLine, err)
 	}
 	return err
 }
@@ -43,22 +46,21 @@ func EN6408Read(place int) (*viewmodel.DafValue6408, error) {
 		prodsMdl.SetInterrogatePlace(-1)
 	}()
 
+	v := new(viewmodel.DafValue6408)
 	addr := prodsMdl.ProductAt(place).Addr
-	b, err := modbus.Read3(portDaf, 32, modbus.Var(addr-1)*2, 2, func(_, _ []byte) error {
-		return nil
-	})
+	_, err := modbus.Read3(
+		withKeys(structlog.New(), "ЭН6408", "опрос", "место", place+1),
+		portDaf, 32, modbus.Var(addr-1)*2, 2, func(_, response []byte) (string, error) {
+			b := response[3:]
+			v.Current = (float64(b[0])*256 + float64(b[1])) / 100
+			v.Threshold1 = b[3]&1 == 0
+			v.Threshold2 = b[3]&2 == 0
+			return fmt.Sprintf("%+v", *v), nil
+		})
 	if err != nil {
 		return nil, ErrEN6408.Appendf("опрос места %d: %+v", place+1, err)
 	}
-	b = b[3:]
-	v := new(viewmodel.DafValue6408)
-	v.Current = (float64(b[0])*256 + float64(b[1])) / 100
-	v.Threshold1 = b[3]&1 == 0
-	v.Threshold2 = b[3]&2 == 0
 	prodsMdl.Set6408Value(place, *v)
-
-	structlog.DefaultLogger.Info("ЭН6408: опрос места", KeyPlace, place, KeyEN6408, *v)
-
 	return v, nil
 }
 
@@ -69,15 +71,19 @@ func switchGas(gas data.Gas) error {
 		ProtoCmd: 0x10,
 		Data:     []byte{0, 32, 0, 1, 2, 0, byte(gas)},
 	}
-	if _, err := req.GetResponse(portDaf, nil); err != nil {
-		return ErrGasBlock.Appendf("клапан %d: %v", gas, err)
+	if _, err := req.GetResponse(
+		withKeys(structlog.New(), "газовый_блок", gas),
+		portDaf, nil); err != nil {
+		return ErrGasBlock.Appendf("газовый блок: клапан %d: %v", gas, err)
 	}
 	return nil
 }
 
 func dafReadAtPlace(place int) (v viewmodel.DafValue, err error) {
 
-	addr := prodsMdl.ProductAt(place).Addr
+	product := prodsMdl.ProductAt(place)
+	addr := product.Addr
+	log := withProductAtPlace(structlog.New(), place)
 
 	prodsMdl.SetInterrogatePlace(place)
 	defer func() {
@@ -96,23 +102,15 @@ func dafReadAtPlace(place int) (v viewmodel.DafValue, err error) {
 		{0x3A, &v.VersionID},
 		{0x32, &v.Gas},
 	} {
-		if *x.p, err = modbus.Read3BCD(portDaf, addr, x.var3); err != nil {
+		if *x.p, err = modbus.Read3BCD(log, portDaf, addr, x.var3); err != nil {
 			break
 		}
 	}
 	if err == nil {
-		v.Mode, err = modbus.ReadUInt16(portDaf, addr, 0x23)
+		v.Mode, err = modbus.ReadUInt16(log, portDaf, addr, 0x23)
 	}
 
 	if err == nil {
-		logrus.Debugf("место %d, адрес %d: %v", place+1, addr, v)
-
-		log.Debug(fmt.Sprintf("%+v", v),
-			structlog.KeyTime, now(),
-			"место", place+1,
-			"адрес", addr,
-		)
-
 		prodsMdl.SetDafValue(place, v)
 	}
 	if isDeviceError(err) {
@@ -129,7 +127,9 @@ func dafSendCmdToPlace(place int, cmd modbus.DevCmd, arg float64) error {
 
 	addr := prodsMdl.ProductAt(place).Addr
 
-	err := modbus.Write32FloatProto(portDaf, addr, 0x10, cmd, arg)
+	log := withProductAtPlace(structlog.New(), place)
+
+	err := modbus.Write32FloatProto(log, portDaf, addr, 0x10, cmd, arg)
 	if err == nil {
 		logrus.Infof("ДАФ №%d, адрес %d: запись в 32-ой регистр %X, %v", place+1, addr, cmd, arg)
 		prodsMdl.SetConnectionOkAt(place)

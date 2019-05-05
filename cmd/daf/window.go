@@ -11,6 +11,7 @@ import (
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 	"github.com/lxn/win"
+	"github.com/powerman/structlog"
 	"math"
 	"time"
 )
@@ -54,7 +55,7 @@ func runMainWindow() error {
 	app.SetProductName("EN8800-6408")
 	settings := walk.NewIniFileSettings("settings.ini")
 	if err := settings.Load(); err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	app.SetSettings(settings)
 
@@ -142,6 +143,9 @@ func runMainWindow() error {
 						dafMainWindow.SetWorkStatus(walk.RGB(139, 69, 19), what+": прервано")
 					} else {
 						dafMainWindow.SetWorkStatus(walk.RGB(255, 0, 0), what+": "+err.Error())
+
+						structlog.New().PrintErr(err)
+
 						showErr(what, err.Error())
 					}
 
