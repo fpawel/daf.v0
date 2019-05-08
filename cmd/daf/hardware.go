@@ -24,7 +24,7 @@ var (
 )
 
 func EN6408SetConnectionLine(place int, connLine EN6408ConnectionLine) error {
-	req := modbus.Req{
+	req := modbus.Request{
 		Addr:     0x20,
 		ProtoCmd: 0x10,
 		Data:     []byte{0, byte(place), 0, 1, 2, 0, byte(connLine)},
@@ -66,7 +66,7 @@ func EN6408Read(place int) (*viewmodel.DafValue6408, error) {
 
 func switchGas(gas data.Gas) error {
 
-	req := modbus.Req{
+	req := modbus.Request{
 		Addr:     33,
 		ProtoCmd: 0x10,
 		Data:     []byte{0, 32, 0, 1, 2, 0, byte(gas)},
@@ -107,7 +107,7 @@ func dafReadAtPlace(place int) (v viewmodel.DafValue, err error) {
 		}
 	}
 	if err == nil {
-		v.Mode, err = modbus.ReadUInt16(log, portDaf, addr, 0x23)
+		v.Mode, err = modbus.Read3UInt16(log, portDaf, addr, 0x23)
 	}
 
 	if err == nil {
@@ -129,7 +129,7 @@ func dafSendCmdToPlace(place int, cmd modbus.DevCmd, arg float64) error {
 
 	log := withProductAtPlace(structlog.New(), place)
 
-	err := modbus.Write32FloatProto(log, portDaf, addr, 0x10, cmd, arg)
+	err := modbus.Write32(log, portDaf, addr, 0x10, cmd, arg)
 	if err == nil {
 		logrus.Infof("ДАФ №%d, адрес %d: запись в 32-ой регистр %X, %v", place+1, addr, cmd, arg)
 		prodsMdl.SetConnectionOkAt(place)

@@ -47,7 +47,7 @@ func dafSendCmdToEachOkProduct(cmd modbus.DevCmd, arg float64) error {
 		if err := portDaf.ensureOpened(); err != nil {
 			return err
 		}
-		_, err := portDaf.Reader.Write(modbus.Write32BCDRequest(0, 0x10, cmd, arg).Bytes())
+		_, err := portDaf.Reader.Write(modbus.NewWrite32BCDRequest(0, 0x10, cmd, arg).Bytes())
 		return err
 	}
 
