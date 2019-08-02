@@ -47,7 +47,7 @@ func dafSendCmdToEachOkProduct(cmd modbus.DevCmd, arg float64) error {
 		if err := portDaf.ensureOpened(); err != nil {
 			return err
 		}
-		_, err := portDaf.Reader.Write(modbus.NewWrite32BCDRequest(0, 0x10, cmd, arg).Bytes())
+		_, err := portDaf.ReadWriter.Write(modbus.NewWrite32BCDRequest(0, 0x10, cmd, arg).Bytes())
 		return err
 	}
 
@@ -268,7 +268,7 @@ func interrogateProducts() error {
 }
 
 type reader struct {
-	*comport.Reader
+	*comport.ReadWriter
 	comm.Config
 	PortName string
 }
@@ -277,8 +277,8 @@ func (x reader) GetResponse(logger *structlog.Logger, bytes []byte, responsePars
 	if err := x.ensureOpened(); err != nil {
 		return nil, err
 	}
-	return x.Reader.GetResponse(comm.Request{
-		Logger:         logger,
+	return x.ReadWriter.GetResponse(comm.Request{
+		Log:            logger,
 		Bytes:          bytes,
 		Config:         x.Config,
 		ResponseParser: responseParser,
@@ -286,10 +286,10 @@ func (x reader) GetResponse(logger *structlog.Logger, bytes []byte, responsePars
 }
 
 func (x reader) ensureOpened() error {
-	if x.Reader.Opened() {
+	if x.ReadWriter.Opened() {
 		return nil
 	}
-	return x.Reader.Open(x.PortName)
+	return x.ReadWriter.Open(x.PortName)
 }
 
 func sleep(t time.Duration) {
@@ -386,7 +386,7 @@ var (
 	currentWorkName string
 
 	portDaf = reader{
-		Reader: comport.NewReader(comport.Config{Baud: 9600}),
+		ReadWriter: comport.NewReader(comport.Config{Baud: 9600}),
 		Config: comm.Config{
 			ReadByteTimeoutMillis: 50,
 			ReadTimeoutMillis:     1000,
@@ -395,7 +395,7 @@ var (
 	}
 
 	portHart = reader{
-		Reader: comport.NewReader(comport.Config{
+		ReadWriter: comport.NewReader(comport.Config{
 			Baud:        1200,
 			ReadTimeout: time.Millisecond,
 			Parity:      comport.ParityOdd,
