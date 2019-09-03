@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"github.com/ansel1/merry"
 	"github.com/fpawel/comm"
-	"github.com/fpawel/comm/comport"
 	"github.com/fpawel/comm/modbus"
-	"github.com/fpawel/daf/internal/data"
-	"github.com/fpawel/daf/internal/viewmodel"
+	"github.com/fpawel/daf.v0/internal/data"
+	"github.com/fpawel/daf.v0/internal/viewmodel"
+	"github.com/fpawel/gohelp"
 	"github.com/hako/durafmt"
 	"github.com/lxn/walk"
 	"github.com/powerman/structlog"
@@ -21,7 +21,7 @@ func isFailWork(err error) bool {
 }
 
 func isDeviceError(err error) bool {
-	return merry.Is(err, comm.ErrProtocol) || merry.Is(err, context.DeadlineExceeded)
+	return merry.Is(err, comm.Err) || merry.Is(err, context.DeadlineExceeded)
 }
 
 type Product = viewmodel.DafProductViewModel
@@ -44,10 +44,7 @@ func dafSendCmdToEachOkProduct(cmd modbus.DevCmd, arg float64) error {
 		fmt.Sprintf("отправка команды %X, %v", cmd, arg))
 
 	if cmd == 5 {
-		if err := portDaf.ensureOpened(); err != nil {
-			return err
-		}
-		_, err := portDaf.ReadWriter.Write(modbus.NewWrite32BCDRequest(0, 0x10, cmd, arg).Bytes())
+		_, err := portDaf.Write(log, ctxApp, modbus.NewWrite32BCDRequest(0, 0x10, cmd, arg).Bytes())
 		return err
 	}
 
@@ -267,33 +264,8 @@ func interrogateProducts() error {
 	}
 }
 
-type reader struct {
-	*comport.ReadWriter
-	comm.Config
-	PortName string
-}
-
-func (x reader) GetResponse(logger *structlog.Logger, bytes []byte, responseParser comm.ResponseParser) ([]byte, error) {
-	if err := x.ensureOpened(); err != nil {
-		return nil, err
-	}
-	return x.ReadWriter.GetResponse(comm.Request{
-		Log:            logger,
-		Bytes:          bytes,
-		Config:         x.Config,
-		ResponseParser: responseParser,
-	}, comportContext)
-}
-
-func (x reader) ensureOpened() error {
-	if x.ReadWriter.Opened() {
-		return nil
-	}
-	return x.ReadWriter.Open(x.PortName)
-}
-
 func sleep(t time.Duration) {
-	log := withKeys(structlog.New(), "duration", durafmt.Parse(t))
+	log := gohelp.LogPrependSuffixKeys(log, "duration", durafmt.Parse(t))
 
 	log.Info("начало паузы", structlog.KeyTime, now())
 	defer func() {
@@ -305,7 +277,7 @@ func sleep(t time.Duration) {
 		select {
 		case <-timer.C:
 			return
-		case <-comportContext.Done():
+		case <-ctxApp.Done():
 			return
 		}
 	}
@@ -313,13 +285,13 @@ func sleep(t time.Duration) {
 
 func delay(what string, total time.Duration) error {
 
-	log := withKeys(structlog.New(), "duration", durafmt.Parse(total), "what", what)
+	log := gohelp.LogPrependSuffixKeys(log, "duration", durafmt.Parse(total), "what", what)
 
-	originalComportContext := comportContext
-	ctxDelay, doSkipDelay := context.WithTimeout(comportContext, total)
-	comportContext = ctxDelay
+	originalComportContext := ctxApp
+	ctxDelay, doSkipDelay := context.WithTimeout(ctxApp, total)
+	ctxApp = ctxDelay
 	defer func() {
-		comportContext = originalComportContext
+		ctxApp = originalComportContext
 		dafMainWindow.DelayHelp.Hide()
 	}()
 
@@ -379,38 +351,3 @@ WHERE work_name = ?
   AND product_id IN (SELECT product_id FROM last_party_products)`, workName)
 	currentWorkName = workName
 }
-
-var (
-	dafMainWindow   DafMainWindow
-	prodsMdl        *viewmodel.DafProductsTable
-	currentWorkName string
-
-	portDaf = reader{
-		ReadWriter: comport.NewReader(comport.Config{Baud: 9600}),
-		Config: comm.Config{
-			ReadByteTimeoutMillis: 50,
-			ReadTimeoutMillis:     1000,
-			MaxAttemptsRead:       2,
-		},
-	}
-
-	portHart = reader{
-		ReadWriter: comport.NewReader(comport.Config{
-			Baud:        1200,
-			ReadTimeout: time.Millisecond,
-			Parity:      comport.ParityOdd,
-			StopBits:    comport.Stop1,
-		}),
-		Config: comm.Config{
-			ReadByteTimeoutMillis: 50,
-			ReadTimeoutMillis:     2000,
-			MaxAttemptsRead:       5,
-		},
-	}
-
-	cancelComport  = func() {}
-	skipDelay      = func() {}
-	comportContext context.Context
-
-	ErrNoOkProducts = merry.New("отстутсвуют приборы, которые отмеченны галочками и не имеют ошибок связи")
-)

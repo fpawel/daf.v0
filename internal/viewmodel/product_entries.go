@@ -1,8 +1,8 @@
 package viewmodel
 
 import (
-	"github.com/fpawel/daf/internal/assets"
-	"github.com/fpawel/daf/internal/data"
+	"github.com/fpawel/daf.v0/internal/assets"
+	"github.com/fpawel/daf.v0/internal/data"
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 )

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"github.com/ansel1/merry"
 	"github.com/fpawel/comm"
-	"github.com/powerman/structlog"
+	"github.com/fpawel/gohelp"
 	"github.com/sirupsen/logrus"
 	"strconv"
 )
@@ -59,17 +59,17 @@ func hartInit() ([]byte, error) {
 		// 06 00 00 18 00 20 FE E2 B4 05 07 01 06 18 00 00 00 01 05 10 00 00 00 60 93 60 93 01 9E
 		// 06 00 00 18 00 00 FE E2 B4 05 07 01 06 18 00 00 00 01 05 10 00 00 00 60 93 60 93 01 BE
 		if len(b) != 29 {
-			return comm.ErrProtocol.WithMessagef("ожидалось 29 байт, получено %d: % X", len(b), b)
+			return comm.Err.WithMessagef("ожидалось 29 байт, получено %d: % X", len(b), b)
 		}
 		if !bytes.Equal(b[:4], []byte{0x06, 0x00, 0x00, 0x18}) {
-			return comm.ErrProtocol.WithMessagef("ожидалось 06 00 00 18, % X", b[:4])
+			return comm.Err.WithMessagef("ожидалось 06 00 00 18, % X", b[:4])
 		}
 		if b[6] != 0xFE {
-			return comm.ErrProtocol.WithMessage("b[6] == 0xFE")
+			return comm.Err.WithMessage("b[6] == 0xFE")
 		}
 
 		if bytes.Equal(b[23:27], []byte{0x60, 0x93, 0x60, 0x93, 0x01}) {
-			return comm.ErrProtocol.WithMessagef("b[29:27] != 60 93 60 93 01, % X", b[23:27])
+			return comm.Err.WithMessagef("b[29:27] != 60 93 60 93 01, % X", b[23:27])
 		}
 		return nil
 	})
@@ -81,8 +81,8 @@ func hartInit() ([]byte, error) {
 
 func hartGetResponse(req []byte, parse func([]byte) error) ([]byte, error) {
 	offset := 0
-	log := withKeys(structlog.New(), "hart", "")
-	response, err := portHart.GetResponse(log, req, func(_, response []byte) (s string, err error) {
+	log := gohelp.LogPrependSuffixKeys(log, "hart", "")
+	response, err := portHart.GetResponse(log, ctxApp, req, func(_, response []byte) (s string, err error) {
 		offset, err = parseHart(response, parse)
 		s = strconv.Itoa(offset)
 		return
@@ -93,7 +93,7 @@ func hartGetResponse(req []byte, parse func([]byte) error) ([]byte, error) {
 func parseHart(response []byte, parse func([]byte) error) (int, error) {
 
 	if len(response) < 5 {
-		return 0, comm.ErrProtocol.WithMessage("длина ответа меньше 5")
+		return 0, comm.Err.WithMessage("длина ответа меньше 5")
 	}
 	offset := 0
 	for i := 2; i < len(response)-1; i++ {
@@ -103,12 +103,12 @@ func parseHart(response []byte, parse func([]byte) error) (int, error) {
 		}
 	}
 	if offset == 0 || offset >= len(response) {
-		return 0, comm.ErrProtocol.WithMessage("ответ не соответствует шаблону FF FF XX")
+		return 0, comm.Err.WithMessage("ответ не соответствует шаблону FF FF XX")
 	}
 	result := response[offset:]
 
 	if hartCRC(result) != result[len(result)-1] {
-		return 0, comm.ErrProtocol.WithMessage("не совпадает контрольная сумма")
+		return 0, comm.Err.WithMessage("не совпадает контрольная сумма")
 	}
 	return offset, parse(result)
 }
@@ -133,7 +133,7 @@ func hartSwitchOff(hartID []byte) error {
 			0x86, 0x22, 0xB4, hartID[0], hartID[1], hartID[2], 0x80, 0x06,
 		}
 		if !bytes.Equal(a, b[:8]) {
-			return comm.ErrProtocol.WithMessagef("ожидалось % X, получено % X", a, b[:8])
+			return comm.Err.WithMessagef("ожидалось % X, получено % X", a, b[:8])
 		}
 		return nil
 	})
@@ -158,13 +158,13 @@ func hartReadConcentration(id []byte) ([]byte, error) {
 		if len(b) < 16 {
 			// нужно сделать паузу, возможно плата тормозит
 			//time.Sleep(time.Millisecond * 100)
-			return comm.ErrProtocol.WithMessagef("ожидалось 16 байт, получено % X", b)
+			return comm.Err.WithMessagef("ожидалось 16 байт, получено % X", b)
 
 		}
 		// 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15
 		// 86 22 B4 00 00 01 01 07 00 00 A1 00 00 00 00 B6
 		if !bytes.Equal(rpat, b[:8]) {
-			return comm.ErrProtocol.WithMessagef("ожидалось % X, получено % X", rpat, b)
+			return comm.Err.WithMessagef("ожидалось % X, получено % X", rpat, b)
 		}
 		return nil
 	})

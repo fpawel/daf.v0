@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/fpawel/daf/internal/data"
+	"github.com/fpawel/daf.v0/internal/data"
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 	"math"

@@ -6,8 +6,8 @@ import (
 	"github.com/ansel1/merry"
 	"github.com/fpawel/comm/comport"
 	"github.com/fpawel/comm/modbus"
-	"github.com/fpawel/daf/internal/data"
-	"github.com/fpawel/daf/internal/viewmodel"
+	"github.com/fpawel/daf.v0/internal/data"
+	"github.com/fpawel/daf.v0/internal/viewmodel"
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
 	"github.com/lxn/win"
@@ -115,12 +115,10 @@ func runMainWindow() error {
 
 		prodsMdl.ClearConnectionsInfo()
 
-		comportContext, cancelComport = context.WithCancel(context.Background())
+		ctxApp, cancelWorkFunc = context.WithCancel(context.Background())
 		btnRun.SetVisible(false)
 		gbCmd.SetVisible(false)
 
-		portDaf.PortName = cbComportDaf.Text()
-		portHart.PortName = cbComportHart.Text()
 		pbCancelWork.SetVisible(true)
 		dafMainWindow.SetWorkStatus(ColorNavy, what+": выполняется")
 
@@ -260,7 +258,7 @@ func runMainWindow() error {
 						AssignTo: &pbCancelWork,
 						Text:     "Прервать",
 						OnClicked: func() {
-							cancelComport()
+							cancelWorkFunc()
 						},
 					},
 
@@ -352,9 +350,9 @@ func runMainWindow() error {
 								Layout: VBox{},
 								Children: []Widget{
 									Label{Text: "Стенд и приборы:"},
-									newComboBoxComport(&cbComportDaf, "comport_products"),
+									newComboBoxComport(&cbComportDaf, "COMPORT_PRODUCTS"),
 									Label{Text: "HART модем:"},
-									newComboBoxComport(&cbComportHart, "comport_hart"),
+									newComboBoxComport(&cbComportHart, "COMPORT_HART"),
 								},
 							},
 							GroupBox{
@@ -500,7 +498,9 @@ func runProductDialog(owner walk.Form, p *data.Product) {
 					save(fmt.Sprintf("cерийный номер: %v", edSerial.Value()))
 				},
 			},
-			Composite{},
+			Composite{
+				Layout: HBox{},
+			},
 			PushButton{
 				AssignTo: &btn,
 				Text:     "Закрыть",

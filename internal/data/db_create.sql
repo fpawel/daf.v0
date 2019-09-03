@@ -1,6 +1,6 @@
 PRAGMA foreign_keys = ON;
 PRAGMA encoding = 'UTF-8';
--- %MYAPPDATA%\daf\daf.sqlite
+-- %MYAPPDATA%\daf.v0\daf.v0.sqlite
 
 CREATE TABLE IF NOT EXISTS party
 (
